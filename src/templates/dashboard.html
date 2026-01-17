@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rental Search - Tumwater/Olympia</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+        }
+
+        header .stats {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .filters {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .filters select, .filters input, .filters button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .filters button {
+            background: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        .filters button:hover {
+            background: #2980b9;
+        }
+
+        .filters button.secondary {
+            background: #95a5a6;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .section-header h2 {
+            font-size: 1.2rem;
+        }
+
+        .section-header .badge {
+            background: #3498db;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+
+        .section.best-match .section-header {
+            border-color: #27ae60;
+        }
+
+        .section.best-match .badge {
+            background: #27ae60;
+        }
+
+        .section.match .section-header {
+            border-color: #3498db;
+        }
+
+        .section.flexible .section-header {
+            border-color: #f39c12;
+        }
+
+        .section.flexible .badge {
+            background: #f39c12;
+        }
+
+        .listings {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+        }
+
+        .listing-card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .listing-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .listing-card.is-new {
+            border-left: 4px solid #e74c3c;
+        }
+
+        .listing-card.is-favorite {
+            border-left: 4px solid #f39c12;
+        }
+
+        .listing-card .new-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+
+        .listing-card .title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            padding-right: 50px;
+        }
+
+        .listing-card .title a {
+            color: #2c3e50;
+            text-decoration: none;
+        }
+
+        .listing-card .title a:hover {
+            color: #3498db;
+        }
+
+        .listing-card .price {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #27ae60;
+            margin-bottom: 8px;
+        }
+
+        .listing-card .specs {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .listing-card .specs span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .listing-card .address {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .listing-card .distance {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .listing-card .keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .listing-card .keyword {
+            background: #e8f5e9;
+            color: #27ae60;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        .listing-card .source {
+            font-size: 0.75rem;
+            color: #999;
+        }
+
+        .listing-card .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+
+        .listing-card .actions button {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .listing-card .actions button:hover {
+            background: #f5f5f5;
+        }
+
+        .listing-card .actions button.favorite.active {
+            background: #fff3cd;
+            border-color: #f39c12;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .score-badge {
+            display: inline-block;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-left: 8px;
+        }
+
+        .scrape-btn {
+            background: #9b59b6 !important;
+        }
+
+        .scrape-btn:hover {
+            background: #8e44ad !important;
+        }
+
+        @media (max-width: 768px) {
+            .listings {
+                grid-template-columns: 1fr;
+            }
+
+            .filters {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Rental Search - Tumwater/Olympia, WA</h1>
+            <div class="stats">
+                {{ total_count }} listings found
+                {% if new_count > 0 %}
+                    | <strong>{{ new_count }} new</strong>
+                {% endif %}
+                | Budget: ${{ config.budget.max_rent }}/mo
+                | Radius: {{ config.location.radius_miles }} mi
+            </div>
+        </header>
+
+        <form class="filters" method="get">
+            <select name="tier">
+                <option value="">All Tiers</option>
+                <option value="best_match" {% if filters.tier == 'best_match' %}selected{% endif %}>Best Match</option>
+                <option value="match" {% if filters.tier == 'match' %}selected{% endif %}>Match</option>
+                <option value="flexible" {% if filters.tier == 'flexible' %}selected{% endif %}>Flexible</option>
+            </select>
+
+            <select name="source">
+                <option value="">All Sources</option>
+                {% for s in sources %}
+                <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+
+            <input type="number" name="min_beds" placeholder="Min beds" value="{{ filters.min_beds or '' }}" style="width: 100px;">
+            <input type="number" name="max_rent" placeholder="Max rent" value="{{ filters.max_rent or '' }}" style="width: 100px;">
+
+            <label>
+                <input type="checkbox" name="show_inactive" {% if filters.show_inactive %}checked{% endif %}>
+                Show inactive
+            </label>
+
+            <button type="submit">Filter</button>
+            <a href="/" style="padding: 8px 12px;">Clear</a>
+
+            {% if new_count > 0 %}
+            <button type="button" class="secondary" onclick="markAllSeen()">Mark All Seen</button>
+            {% endif %}
+
+            <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
+        </form>
+
+        {% if grouped.best_match %}
+        <section class="section best-match">
+            <div class="section-header">
+                <h2>Best Match</h2>
+                <span class="badge">{{ grouped.best_match|length }}</span>
+            </div>
+            <div class="listings">
+                {% for listing in grouped.best_match %}
+                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                    {% if listing.is_new %}
+                    <span class="new-badge">New</span>
+                    {% endif %}
+
+                    <div class="title">
+                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                    </div>
+
+                    <div class="price">
+                        {% if listing.rent %}
+                            ${{ "{:,}".format(listing.rent) }}/mo
+                        {% else %}
+                            Price TBD
+                        {% endif %}
+                    </div>
+
+                    <div class="specs">
+                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                    </div>
+
+                    {% if listing.full_address %}
+                    <div class="address">{{ listing.full_address }}</div>
+                    {% endif %}
+
+                    {% if listing.distance_miles %}
+                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                    {% endif %}
+
+                    {% if listing.keyword_list %}
+                    <div class="keywords">
+                        {% for kw in listing.keyword_list %}
+                        <span class="keyword">{{ kw }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="source">via {{ listing.source_name }}</div>
+
+                    <div class="actions">
+                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                            {{ '★' if listing.is_favorite else '☆' }} Favorite
+                        </button>
+                        {% if listing.is_new %}
+                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        {% endif %}
+                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if grouped.match %}
+        <section class="section match">
+            <div class="section-header">
+                <h2>Match</h2>
+                <span class="badge">{{ grouped.match|length }}</span>
+            </div>
+            <div class="listings">
+                {% for listing in grouped.match %}
+                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                    {% if listing.is_new %}
+                    <span class="new-badge">New</span>
+                    {% endif %}
+
+                    <div class="title">
+                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                    </div>
+
+                    <div class="price">
+                        {% if listing.rent %}
+                            ${{ "{:,}".format(listing.rent) }}/mo
+                        {% else %}
+                            Price TBD
+                        {% endif %}
+                    </div>
+
+                    <div class="specs">
+                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                    </div>
+
+                    {% if listing.full_address %}
+                    <div class="address">{{ listing.full_address }}</div>
+                    {% endif %}
+
+                    {% if listing.distance_miles %}
+                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                    {% endif %}
+
+                    {% if listing.keyword_list %}
+                    <div class="keywords">
+                        {% for kw in listing.keyword_list %}
+                        <span class="keyword">{{ kw }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="source">via {{ listing.source_name }}</div>
+
+                    <div class="actions">
+                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                            {{ '★' if listing.is_favorite else '☆' }} Favorite
+                        </button>
+                        {% if listing.is_new %}
+                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        {% endif %}
+                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if grouped.flexible %}
+        <section class="section flexible">
+            <div class="section-header">
+                <h2>Flexible</h2>
+                <span class="badge">{{ grouped.flexible|length }}</span>
+            </div>
+            <div class="listings">
+                {% for listing in grouped.flexible %}
+                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                    {% if listing.is_new %}
+                    <span class="new-badge">New</span>
+                    {% endif %}
+
+                    <div class="title">
+                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                    </div>
+
+                    <div class="price">
+                        {% if listing.rent %}
+                            ${{ "{:,}".format(listing.rent) }}/mo
+                        {% else %}
+                            Price TBD
+                        {% endif %}
+                    </div>
+
+                    <div class="specs">
+                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                    </div>
+
+                    {% if listing.full_address %}
+                    <div class="address">{{ listing.full_address }}</div>
+                    {% endif %}
+
+                    {% if listing.distance_miles %}
+                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                    {% endif %}
+
+                    {% if listing.keyword_list %}
+                    <div class="keywords">
+                        {% for kw in listing.keyword_list %}
+                        <span class="keyword">{{ kw }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="source">via {{ listing.source_name }}</div>
+
+                    <div class="actions">
+                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                            {{ '★' if listing.is_favorite else '☆' }} Favorite
+                        </button>
+                        {% if listing.is_new %}
+                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        {% endif %}
+                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if not grouped.best_match and not grouped.match and not grouped.flexible %}
+        <div class="empty-state">
+            <h3>No listings found</h3>
+            <p>Click "Run Scrape Now" to fetch listings, or adjust your filters.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        async function toggleFavorite(id, button) {
+            const response = await fetch(`/listings/${id}/favorite`, { method: 'POST' });
+            const data = await response.json();
+            if (data.status === 'ok') {
+                button.classList.toggle('active', data.is_favorite);
+                button.closest('.listing-card').classList.toggle('is-favorite', data.is_favorite);
+            }
+        }
+
+        async function hideListing(id) {
+            if (confirm('Hide this listing?')) {
+                await fetch(`/listings/${id}/hide`, { method: 'POST' });
+                document.querySelector(`[data-id="${id}"]`).remove();
+            }
+        }
+
+        async function markSeen(id, button) {
+            await fetch(`/listings/${id}/mark-seen`, { method: 'POST' });
+            const card = button.closest('.listing-card');
+            card.classList.remove('is-new');
+            card.querySelector('.new-badge')?.remove();
+        }
+
+        async function markAllSeen() {
+            await fetch('/listings/mark-all-seen', { method: 'POST' });
+            document.querySelectorAll('.is-new').forEach(el => el.classList.remove('is-new'));
+            document.querySelectorAll('.new-badge').forEach(el => el.remove());
+        }
+
+        async function runScrape() {
+            const btn = document.querySelector('.scrape-btn');
+            btn.disabled = true;
+            btn.textContent = 'Scraping...';
+
+            try {
+                const response = await fetch('/scrape/run', { method: 'POST' });
+                const data = await response.json();
+                alert(`Scrape complete!\nFound: ${data.results.total_found}\nNew: ${data.results.new_listings}`);
+                window.location.reload();
+            } catch (e) {
+                alert('Scrape failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Scrape Now';
+            }
+        }
+    </script>
+</body>
+</html>
