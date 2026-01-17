@@ -11,9 +11,9 @@ Usage:
 """
 
 import argparse
+import os
 import uvicorn
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from src.config import get_config
 from src.models.database import init_db
@@ -24,20 +24,26 @@ from src.services import ScraperService
 
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
-    app = FastAPI(
+    application = FastAPI(
         title="Rental Search",
         description="Property rental search for Tumwater/Olympia, WA",
         version="1.0.0"
     )
 
     # Include routes
-    app.include_router(router)
+    application.include_router(router)
 
-    return app
+    return application
+
+
+# Create app at module level for uvicorn import (e.g., uvicorn main:app)
+print("[startup] Initializing database...")
+init_db()
+app = create_app()
 
 
 def main():
-    """Main entry point."""
+    """Main entry point for CLI usage."""
     parser = argparse.ArgumentParser(description="Rental property search tool")
     parser.add_argument(
         "--scrape",
@@ -63,10 +69,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize database
-    print("[startup] Initializing database...")
-    init_db()
-
     config = get_config()
 
     # If scrape-only mode, just run scrapers and exit
@@ -77,18 +79,15 @@ def main():
         print(f"\n[complete] Results: {results}")
         return
 
-    # Create the app
-    app = create_app()
-
     # Start scheduler if not disabled
     scheduler = None
     if not args.no_schedule:
         scheduler = RentalScheduler()
         scheduler.start()
 
-    # Get host/port
-    host = args.host or config.dashboard.host
-    port = args.port or config.dashboard.port
+    # Get host/port (use env PORT for cloud platforms like Render)
+    host = args.host or os.environ.get("HOST", config.dashboard.host)
+    port = args.port or int(os.environ.get("PORT", config.dashboard.port))
 
     print(f"\n[startup] Starting web dashboard at http://{host}:{port}")
     print("[startup] Press Ctrl+C to stop\n")
