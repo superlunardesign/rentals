@@ -130,10 +130,32 @@
         .listing-card {
             background: white;
             border-radius: 8px;
-            padding: 15px;
+            overflow: hidden;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             position: relative;
             transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .listing-card .listing-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: #eee;
+        }
+
+        .listing-card .listing-image-placeholder {
+            width: 100%;
+            height: 180px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2rem;
+        }
+
+        .listing-card .card-body {
+            padding: 15px;
         }
 
         .listing-card:hover {
@@ -346,55 +368,64 @@
             <div class="listings">
                 {% for listing in grouped.best_match %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.is_new %}
-                    <span class="new-badge">New</span>
+                    {% if listing.image_url %}
+                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                    {% else %}
+                    <div class="listing-image-placeholder">🏠</div>
                     {% endif %}
 
-                    <div class="title">
-                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
-                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
-                    </div>
-
-                    <div class="price">
-                        {% if listing.rent %}
-                            ${{ "{:,}".format(listing.rent) }}/mo
-                        {% else %}
-                            Price TBD
-                        {% endif %}
-                    </div>
-
-                    <div class="specs">
-                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
-                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
-                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
-                    </div>
-
-                    {% if listing.full_address %}
-                    <div class="address">{{ listing.full_address }}</div>
-                    {% endif %}
-
-                    {% if listing.distance_miles %}
-                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
-                    {% endif %}
-
-                    {% if listing.keyword_list %}
-                    <div class="keywords">
-                        {% for kw in listing.keyword_list %}
-                        <span class="keyword">{{ kw }}</span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-
-                    <div class="source">via {{ listing.source_name }}</div>
-
-                    <div class="actions">
-                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
-                            {{ '★' if listing.is_favorite else '☆' }} Favorite
-                        </button>
+                    <div class="card-body">
                         {% if listing.is_new %}
-                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        <span class="new-badge">New</span>
                         {% endif %}
-                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+
+                        <div class="title">
+                            <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                            <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                        </div>
+
+                        <div class="price">
+                            {% if listing.rent %}
+                                ${{ "{:,}".format(listing.rent) }}/mo
+                            {% else %}
+                                Price TBD
+                            {% endif %}
+                        </div>
+
+                        <div class="specs">
+                            {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                            {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                            {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                        </div>
+
+                        {% if listing.full_address %}
+                        <div class="address">{{ listing.full_address }}</div>
+                        {% endif %}
+
+                        {% if listing.distance_miles %}
+                        <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                        {% endif %}
+
+                        {% if listing.keyword_list %}
+                        <div class="keywords">
+                            {% for kw in listing.keyword_list %}
+                            <span class="keyword">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="source">via {{ listing.source_name }}</div>
+
+                        <div class="actions">
+                            <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                                {{ '★' if listing.is_favorite else '☆' }} Favorite
+                            </button>
+                            {% if listing.is_new %}
+                            <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                            {% endif %}
+                            <button onclick="hideListing({{ listing.id }})">Hide</button>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}
@@ -411,55 +442,64 @@
             <div class="listings">
                 {% for listing in grouped.match %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.is_new %}
-                    <span class="new-badge">New</span>
+                    {% if listing.image_url %}
+                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                    {% else %}
+                    <div class="listing-image-placeholder">🏠</div>
                     {% endif %}
 
-                    <div class="title">
-                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
-                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
-                    </div>
-
-                    <div class="price">
-                        {% if listing.rent %}
-                            ${{ "{:,}".format(listing.rent) }}/mo
-                        {% else %}
-                            Price TBD
-                        {% endif %}
-                    </div>
-
-                    <div class="specs">
-                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
-                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
-                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
-                    </div>
-
-                    {% if listing.full_address %}
-                    <div class="address">{{ listing.full_address }}</div>
-                    {% endif %}
-
-                    {% if listing.distance_miles %}
-                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
-                    {% endif %}
-
-                    {% if listing.keyword_list %}
-                    <div class="keywords">
-                        {% for kw in listing.keyword_list %}
-                        <span class="keyword">{{ kw }}</span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-
-                    <div class="source">via {{ listing.source_name }}</div>
-
-                    <div class="actions">
-                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
-                            {{ '★' if listing.is_favorite else '☆' }} Favorite
-                        </button>
+                    <div class="card-body">
                         {% if listing.is_new %}
-                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        <span class="new-badge">New</span>
                         {% endif %}
-                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+
+                        <div class="title">
+                            <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                            <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                        </div>
+
+                        <div class="price">
+                            {% if listing.rent %}
+                                ${{ "{:,}".format(listing.rent) }}/mo
+                            {% else %}
+                                Price TBD
+                            {% endif %}
+                        </div>
+
+                        <div class="specs">
+                            {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                            {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                            {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                        </div>
+
+                        {% if listing.full_address %}
+                        <div class="address">{{ listing.full_address }}</div>
+                        {% endif %}
+
+                        {% if listing.distance_miles %}
+                        <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                        {% endif %}
+
+                        {% if listing.keyword_list %}
+                        <div class="keywords">
+                            {% for kw in listing.keyword_list %}
+                            <span class="keyword">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="source">via {{ listing.source_name }}</div>
+
+                        <div class="actions">
+                            <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                                {{ '★' if listing.is_favorite else '☆' }} Favorite
+                            </button>
+                            {% if listing.is_new %}
+                            <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                            {% endif %}
+                            <button onclick="hideListing({{ listing.id }})">Hide</button>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}
@@ -476,55 +516,64 @@
             <div class="listings">
                 {% for listing in grouped.flexible %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.is_new %}
-                    <span class="new-badge">New</span>
+                    {% if listing.image_url %}
+                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                    {% else %}
+                    <div class="listing-image-placeholder">🏠</div>
                     {% endif %}
 
-                    <div class="title">
-                        <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
-                        <span class="score-badge">{{ listing.match_score or 0 }}%</span>
-                    </div>
-
-                    <div class="price">
-                        {% if listing.rent %}
-                            ${{ "{:,}".format(listing.rent) }}/mo
-                        {% else %}
-                            Price TBD
-                        {% endif %}
-                    </div>
-
-                    <div class="specs">
-                        {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
-                        {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
-                        {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
-                    </div>
-
-                    {% if listing.full_address %}
-                    <div class="address">{{ listing.full_address }}</div>
-                    {% endif %}
-
-                    {% if listing.distance_miles %}
-                    <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
-                    {% endif %}
-
-                    {% if listing.keyword_list %}
-                    <div class="keywords">
-                        {% for kw in listing.keyword_list %}
-                        <span class="keyword">{{ kw }}</span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-
-                    <div class="source">via {{ listing.source_name }}</div>
-
-                    <div class="actions">
-                        <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
-                            {{ '★' if listing.is_favorite else '☆' }} Favorite
-                        </button>
+                    <div class="card-body">
                         {% if listing.is_new %}
-                        <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                        <span class="new-badge">New</span>
                         {% endif %}
-                        <button onclick="hideListing({{ listing.id }})">Hide</button>
+
+                        <div class="title">
+                            <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                            <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                        </div>
+
+                        <div class="price">
+                            {% if listing.rent %}
+                                ${{ "{:,}".format(listing.rent) }}/mo
+                            {% else %}
+                                Price TBD
+                            {% endif %}
+                        </div>
+
+                        <div class="specs">
+                            {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                            {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                            {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                        </div>
+
+                        {% if listing.full_address %}
+                        <div class="address">{{ listing.full_address }}</div>
+                        {% endif %}
+
+                        {% if listing.distance_miles %}
+                        <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                        {% endif %}
+
+                        {% if listing.keyword_list %}
+                        <div class="keywords">
+                            {% for kw in listing.keyword_list %}
+                            <span class="keyword">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="source">via {{ listing.source_name }}</div>
+
+                        <div class="actions">
+                            <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                                {{ '★' if listing.is_favorite else '☆' }} Favorite
+                            </button>
+                            {% if listing.is_new %}
+                            <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                            {% endif %}
+                            <button onclick="hideListing({{ listing.id }})">Hide</button>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}

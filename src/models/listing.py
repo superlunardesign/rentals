@@ -39,6 +39,7 @@ class Listing(Base):
     # Description and features
     description: Mapped[Optional[str]] = Column(Text)
     features: Mapped[Optional[str]] = Column(Text)  # Comma-separated list
+    image_url: Mapped[Optional[str]] = Column(String(1000))  # Primary listing image
 
     # Location (for distance calculations)
     latitude: Mapped[Optional[float]] = Column(Float)

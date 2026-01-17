@@ -116,6 +116,7 @@ class ScraperService:
             features=",".join(scraped.features) if scraped.features else None,
             latitude=scraped.latitude,
             longitude=scraped.longitude,
+            image_url=scraped.image_url,
             is_new=True,
             is_active=True,
         )
@@ -140,6 +141,8 @@ class ScraperService:
         listing.rent = scraped.rent or listing.rent
         listing.title = scraped.title or listing.title
         listing.description = scraped.description or listing.description
+        listing.image_url = scraped.image_url or listing.image_url
+        listing.url = scraped.url or listing.url  # Update URL in case it changed
         listing.is_active = True
         listing.last_seen = datetime.utcnow()
 
