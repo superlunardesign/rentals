@@ -20,6 +20,10 @@ rooms:
   min_bathrooms: 1
   min_sqft: 800  # Minimum square footage
 
+  # Best match criteria (must meet ALL for best match tier)
+  best_match_bedrooms: 3
+  best_match_sqft: 1500
+
 keywords:
   # Listings with these get boosted to "Best Match"
   preferred:

@@ -29,6 +29,8 @@ class RoomsConfig(BaseModel):
     min_bedrooms: int
     min_bathrooms: float
     min_sqft: int
+    best_match_bedrooms: int = 3
+    best_match_sqft: int = 1500
 
 
 class KeywordsConfig(BaseModel):
