@@ -136,6 +136,11 @@
             transition: transform 0.2s, box-shadow 0.2s;
         }
 
+        .listing-card .listing-image-link {
+            display: block;
+            text-decoration: none;
+        }
+
         .listing-card .listing-image {
             width: 100%;
             height: 180px;
@@ -368,12 +373,14 @@
             <div class="listings">
                 {% for listing in grouped.best_match %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.image_url %}
-                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
-                    {% else %}
-                    <div class="listing-image-placeholder">🏠</div>
-                    {% endif %}
+                    <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
+                        {% if listing.image_url %}
+                        <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                        {% else %}
+                        <div class="listing-image-placeholder">🏠</div>
+                        {% endif %}
+                    </a>
 
                     <div class="card-body">
                         {% if listing.is_new %}
@@ -442,12 +449,14 @@
             <div class="listings">
                 {% for listing in grouped.match %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.image_url %}
-                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
-                    {% else %}
-                    <div class="listing-image-placeholder">🏠</div>
-                    {% endif %}
+                    <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
+                        {% if listing.image_url %}
+                        <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                        {% else %}
+                        <div class="listing-image-placeholder">🏠</div>
+                        {% endif %}
+                    </a>
 
                     <div class="card-body">
                         {% if listing.is_new %}
@@ -516,12 +525,14 @@
             <div class="listings">
                 {% for listing in grouped.flexible %}
                 <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
-                    {% if listing.image_url %}
-                    <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-                    <div class="listing-image-placeholder" style="display:none;">🏠</div>
-                    {% else %}
-                    <div class="listing-image-placeholder">🏠</div>
-                    {% endif %}
+                    <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
+                        {% if listing.image_url %}
+                        <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                        {% else %}
+                        <div class="listing-image-placeholder">🏠</div>
+                        {% endif %}
+                    </a>
 
                     <div class="card-body">
                         {% if listing.is_new %}
