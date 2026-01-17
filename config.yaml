@@ -12,8 +12,8 @@ location:
   flexible_radius_miles: 20  # "Flexible" tier extends to this
 
 budget:
-  max_rent: 1800  # Update this to your max budget
-  flexible_buffer: 150  # Flexible tier = max + buffer ($1950)
+  max_rent: 2600  # Your max budget
+  flexible_buffer: 150  # Flexible tier = max + buffer ($2750)
 
 rooms:
   min_bedrooms: 2  # Minimum bedrooms required
