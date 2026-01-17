@@ -1,210 +1,347 @@
 """Scraper for AMH (American Homes 4 Rent) - amh.com.
 
-Note: AMH is a JavaScript-heavy SPA that loads listings via API.
-This scraper attempts to use their API directly.
+Based on XPath analysis from user:
+- Listings are in ul > li elements
+- Image/link: li/div/div[1]/div/a/div/img
+- Address: li/div/div[2]/a
+- Price: li/div/div[2]/div[1]/div[1]/span[1]
 """
 
 import re
 import json
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from .base import BaseScraper, ScrapedListing
 
 
 class AMHScraper(BaseScraper):
-    """Scraper for amh.com property listings.
-
-    AMH uses a React frontend with an API backend. We try to hit
-    their API directly for better reliability.
-    """
-
-    # AMH API endpoint (discovered from their site)
-    API_BASE = "https://www.amh.com/api/properties/search"
+    """Scraper for amh.com property listings."""
 
     def __init__(self, url: str = "https://www.amh.com/query?criteria=Tumwater%2C+WA"):
         super().__init__(source_name="amh", base_url=url)
-        # Extract search criteria from URL
-        self.search_location = "Tumwater, WA"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape listings from AMH."""
         listings = []
 
-        # Try API approach first
-        api_listings = self._scrape_via_api()
-        if api_listings:
-            listings.extend(api_listings)
-        else:
-            # Fallback to HTML parsing
-            html_listings = self._scrape_via_html()
-            listings.extend(html_listings)
+        try:
+            soup = self.fetch_page(self.base_url)
+            print(f"[amh] Page title: {soup.title.string if soup.title else 'No title'}")
 
-        print(f"[amh] Found {len(listings)} listings")
+            # Try to find embedded JSON data first (React apps often embed data)
+            json_listings = self._extract_json_data(soup)
+            if json_listings:
+                listings.extend(json_listings)
+                print(f"[amh] Found {len(listings)} listings via JSON")
+                return listings
+
+            # Fallback to HTML parsing with XPath-based selectors
+            # Based on XPath: listings are in ul > li elements
+            all_lis = soup.select("ul li")
+
+            # Filter to property listings (those with price patterns)
+            property_lis = []
+            for li in all_lis:
+                text = li.get_text()
+                # Must have a price like $X,XXX and look like a property
+                if re.search(r'\$[\d,]+', text) and re.search(r'bed|bath|sq\s*ft', text, re.I):
+                    property_lis.append(li)
+
+            print(f"[amh] Found {len(property_lis)} property li elements")
+
+            for li in property_lis:
+                listing = self._parse_listing_li(li)
+                if listing:
+                    listings.append(listing)
+                    print(f"[amh] Parsed: {listing.title[:50]}... - ${listing.rent or 'N/A'}")
+
+        except Exception as e:
+            print(f"[amh] Error scraping: {e}")
+            import traceback
+            traceback.print_exc()
+
+        print(f"[amh] Total: {len(listings)} listings")
         return listings
 
-    def _scrape_via_api(self) -> list[ScrapedListing]:
-        """Try to scrape via AMH's API."""
+    def _extract_json_data(self, soup) -> list[ScrapedListing]:
+        """Try to extract listings from embedded JSON (React hydration data)."""
         listings = []
 
         try:
-            # AMH API search parameters (based on their web app)
-            params = {
-                "city": "Tumwater",
-                "state": "WA",
-                "radius": 25,
-                "limit": 100,
-            }
-
-            # Try different API endpoint patterns
-            api_urls = [
-                f"https://www.amh.com/api/properties/search?{urlencode(params)}",
-                "https://www.amh.com/api/v1/properties/search",
-                "https://www.amh.com/api/homes/search",
-            ]
-
-            for api_url in api_urls:
-                try:
-                    response = self.client.get(api_url)
-                    if response.status_code == 200:
-                        data = response.json()
-                        listings = self._parse_api_response(data)
-                        if listings:
-                            return listings
-                except Exception:
+            scripts = soup.find_all("script")
+            for script in scripts:
+                if not script.string:
                     continue
 
+                # Look for Next.js/React data
+                if "__NEXT_DATA__" in script.string or "properties" in script.string.lower():
+                    # Try to find JSON object
+                    json_patterns = [
+                        r'__NEXT_DATA__["\s]*=\s*(\{[\s\S]*?\})\s*(?:;|<)',
+                        r'"properties"\s*:\s*(\[[\s\S]*?\])',
+                        r'"homes"\s*:\s*(\[[\s\S]*?\])',
+                    ]
+
+                    for pattern in json_patterns:
+                        match = re.search(pattern, script.string)
+                        if match:
+                            try:
+                                data = json.loads(match.group(1))
+                                parsed = self._parse_json_listings(data)
+                                if parsed:
+                                    return parsed
+                            except json.JSONDecodeError:
+                                continue
+
         except Exception as e:
-            print(f"[amh] API scraping failed: {e}")
+            print(f"[amh] JSON extraction failed: {e}")
 
         return listings
 
-    def _parse_api_response(self, data: dict) -> list[ScrapedListing]:
-        """Parse AMH API response."""
+    def _parse_json_listings(self, data) -> list[ScrapedListing]:
+        """Parse listings from JSON data."""
         listings = []
 
-        # Try different response structures
-        items = data.get("properties") or data.get("homes") or data.get("results") or data.get("data") or []
-
+        # Handle different data structures
+        items = []
         if isinstance(data, list):
             items = data
+        elif isinstance(data, dict):
+            # Try common keys
+            for key in ["properties", "homes", "results", "data", "pageProps"]:
+                if key in data:
+                    val = data[key]
+                    if isinstance(val, list):
+                        items = val
+                        break
+                    elif isinstance(val, dict) and "properties" in val:
+                        items = val["properties"]
+                        break
 
         for item in items:
+            if not isinstance(item, dict):
+                continue
+
             try:
                 listing = ScrapedListing(
                     source_name=self.source_name,
-                    source_id=str(item.get("id") or item.get("propertyId") or item.get("homeId", "")),
-                    url=item.get("url") or f"https://www.amh.com/homes/{item.get('id', '')}",
-                    title=item.get("address") or item.get("title") or "AMH Rental",
+                    source_id=str(item.get("id") or item.get("propertyId") or item.get("homeId") or ""),
+                    url=item.get("url") or item.get("detailUrl") or f"https://www.amh.com/homes/{item.get('id', '')}",
+                    title=item.get("address") or item.get("streetAddress") or item.get("title") or "AMH Rental",
                     address=item.get("address") or item.get("streetAddress"),
                     city=item.get("city"),
-                    state=item.get("state"),
-                    zip_code=item.get("zipCode") or item.get("zip"),
+                    state=item.get("state") or "WA",
+                    zip_code=item.get("zipCode") or item.get("zip") or item.get("postalCode"),
                     rent=item.get("rent") or item.get("price") or item.get("monthlyRent"),
                     bedrooms=item.get("bedrooms") or item.get("beds"),
                     bathrooms=item.get("bathrooms") or item.get("baths"),
                     sqft=item.get("sqft") or item.get("squareFeet") or item.get("squareFootage"),
                     description=item.get("description"),
                     latitude=item.get("latitude") or item.get("lat"),
-                    longitude=item.get("longitude") or item.get("lng") or item.get("lon"),
+                    longitude=item.get("longitude") or item.get("lng"),
+                    image_url=item.get("imageUrl") or item.get("image") or item.get("photo"),
                 )
-                listings.append(listing)
+                if listing.source_id:
+                    listings.append(listing)
             except Exception as e:
-                print(f"[amh] Error parsing API item: {e}")
-                continue
+                print(f"[amh] Error parsing JSON item: {e}")
 
         return listings
 
-    def _scrape_via_html(self) -> list[ScrapedListing]:
-        """Fallback HTML scraping for AMH."""
-        listings = []
+    def _parse_listing_li(self, li) -> Optional[ScrapedListing]:
+        """Parse a listing from an li element based on AMH XPath structure.
 
+        XPath structure:
+        - li/div/div[1] = image container with link
+        - li/div/div[2] = info container with address, price
+        """
         try:
-            soup = self.fetch_page(self.base_url)
+            # Get the main container div
+            main_div = li.find("div", recursive=False)
+            if not main_div:
+                # Try finding any div
+                main_div = li.find("div")
 
-            # Look for JSON data embedded in the page (common in React apps)
-            scripts = soup.find_all("script")
-            for script in scripts:
-                if script.string and ("properties" in script.string or "homes" in script.string):
-                    # Try to extract JSON data
-                    json_match = re.search(r'(\{[\s\S]*"(?:properties|homes)"[\s\S]*\})', script.string)
-                    if json_match:
-                        try:
-                            data = json.loads(json_match.group(1))
-                            return self._parse_api_response(data)
-                        except json.JSONDecodeError:
-                            continue
+            if not main_div:
+                return None
 
-            # Try finding listing cards in HTML
-            selectors = [
-                ".property-card",
-                ".home-card",
-                "[data-testid='property-card']",
-                ".listing-card",
-                ".rental-card",
-            ]
+            # Get child divs (image container and info container)
+            child_divs = main_div.find_all("div", recursive=False)
 
-            for selector in selectors:
-                elements = soup.select(selector)
-                if elements:
-                    for elem in elements:
-                        listing = self._parse_html_listing(elem)
-                        if listing:
-                            listings.append(listing)
-                    break
-
-        except Exception as e:
-            print(f"[amh] HTML scraping failed: {e}")
-
-        return listings
-
-    def _parse_html_listing(self, element) -> Optional[ScrapedListing]:
-        """Parse a listing from HTML element."""
-        try:
-            # Extract URL
-            link = element.find("a", href=True)
-            url = link["href"] if link else self.base_url
-            if not url.startswith("http"):
-                url = f"https://www.amh.com{url}"
-
-            # Extract source ID from URL
-            id_match = re.search(r"/homes?/([^/]+)", url)
-            source_id = id_match.group(1) if id_match else str(hash(url))[:12]
-
-            text = element.get_text()
-
-            # Extract details
-            title = None
-            for sel in [".address", "h2", "h3", ".title"]:
-                title_elem = element.select_one(sel)
-                if title_elem:
-                    title = self.clean_text(title_elem.get_text())
-                    break
-
+            image_url = None
+            detail_url = None
+            address = None
             rent = None
-            rent_match = re.search(r'\$\s*([\d,]+)', text)
-            if rent_match:
-                rent = self.parse_rent(rent_match.group(1))
 
+            # Parse image container (usually first div)
+            if len(child_divs) >= 1:
+                img_container = child_divs[0]
+
+                # Find image: div/a/div/img or just img
+                img = img_container.find("img")
+                if img:
+                    image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                    if image_url and not image_url.startswith("http"):
+                        image_url = urljoin("https://www.amh.com", image_url)
+
+                # Find link
+                link = img_container.find("a", href=True)
+                if link:
+                    detail_url = urljoin("https://www.amh.com", link["href"])
+
+            # Parse info container (usually second div)
+            if len(child_divs) >= 2:
+                info_container = child_divs[1]
+
+                # Address is in an <a> tag: div[2]/a
+                addr_link = info_container.find("a")
+                if addr_link:
+                    address = self.clean_text(addr_link.get_text())
+                    if not detail_url:
+                        href = addr_link.get("href")
+                        if href:
+                            detail_url = urljoin("https://www.amh.com", href)
+
+                # Price is in a span: div[2]/div[1]/div[1]/span[1]
+                price_span = info_container.find("span")
+                if price_span:
+                    price_text = price_span.get_text()
+                    rent = self.parse_rent(price_text)
+
+            # Fallback: search entire li for data
+            if not rent:
+                text = li.get_text()
+                price_match = re.search(r'\$\s*([\d,]+)', text)
+                if price_match:
+                    rent = self.parse_rent(price_match.group(1))
+
+            if not address:
+                # Look for address pattern
+                text = li.get_text()
+                addr_match = re.search(r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Way|Blvd)[^,]*)', text, re.I)
+                if addr_match:
+                    address = self.clean_text(addr_match.group(1))
+
+            if not detail_url:
+                # Find any link
+                any_link = li.find("a", href=True)
+                if any_link:
+                    detail_url = urljoin("https://www.amh.com", any_link["href"])
+                else:
+                    detail_url = self.base_url
+
+            # Extract specs from text
+            text = li.get_text()
             bedrooms = self.parse_bedrooms(text)
             bathrooms = self.parse_bathrooms(text)
             sqft = self.parse_sqft(text)
             zip_code = self.extract_zip_code(text)
 
+            # Extract city
+            city = None
+            city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester)', text, re.I)
+            if city_match:
+                city = city_match.group(1).title()
+
+            # Generate source ID
+            source_id = None
+            if detail_url:
+                id_match = re.search(r'/homes?/([^/?\s]+)', detail_url)
+                if id_match:
+                    source_id = id_match.group(1)
+
+            if not source_id:
+                source_id = str(abs(hash(detail_url or address or text[:50])))[:12]
+
+            title = address or f"AMH Property {source_id}"
+
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=url,
-                title=title or "AMH Rental",
-                city="Tumwater",
+                url=detail_url,
+                title=title,
+                address=address,
+                city=city,
                 state="WA",
                 zip_code=zip_code,
                 rent=rent,
                 bedrooms=bedrooms,
                 bathrooms=bathrooms,
                 sqft=sqft,
+                image_url=image_url,
             )
 
         except Exception as e:
-            print(f"[amh] Error parsing HTML listing: {e}")
+            print(f"[amh] Error parsing li element: {e}")
             return None
+
+    def scrape_detail_page(self, url: str) -> dict:
+        """Scrape additional details from individual AMH listing page."""
+        details = {
+            "bedrooms": None,
+            "bathrooms": None,
+            "sqft": None,
+            "description": None,
+            "features": [],
+        }
+
+        try:
+            soup = self.fetch_page(url)
+            text = soup.get_text()
+            text_lower = text.lower()
+
+            # AMH detail pages may have structured data
+            # Try to find JSON-LD or embedded data first
+            scripts = soup.find_all("script", type="application/ld+json")
+            for script in scripts:
+                if script.string:
+                    try:
+                        data = json.loads(script.string)
+                        if isinstance(data, dict):
+                            if data.get("@type") in ["House", "Apartment", "SingleFamilyResidence"]:
+                                details["bedrooms"] = data.get("numberOfBedrooms")
+                                details["bathrooms"] = data.get("numberOfBathroomsTotal")
+                                if data.get("floorSize"):
+                                    sqft_val = data["floorSize"].get("value")
+                                    if sqft_val:
+                                        details["sqft"] = int(sqft_val)
+                                details["description"] = data.get("description")
+                    except json.JSONDecodeError:
+                        pass
+
+            # Fallback to HTML parsing
+            if not details["bedrooms"]:
+                bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text_lower)
+                if bed_match:
+                    details["bedrooms"] = int(bed_match.group(1))
+
+            if not details["bathrooms"]:
+                bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text_lower)
+                if bath_match:
+                    details["bathrooms"] = float(bath_match.group(1))
+
+            if not details["sqft"]:
+                sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf|square feet)', text_lower)
+                if sqft_match:
+                    details["sqft"] = int(sqft_match.group(1).replace(',', ''))
+
+            # Look for description
+            if not details["description"]:
+                for selector in [".description", ".property-description", "[class*='description']", "p"]:
+                    elems = soup.select(selector)
+                    for elem in elems:
+                        desc = self.clean_text(elem.get_text())
+                        if len(desc) > 50:
+                            details["description"] = desc[:1000]
+                            break
+                    if details["description"]:
+                        break
+
+            # Extract keywords/features
+            details["features"] = self.extract_keywords(text)
+
+        except Exception as e:
+            print(f"[amh] Error scraping detail page {url}: {e}")
+
+        return details

@@ -51,7 +51,8 @@ class ScraperService:
                 with scraper_class(source.url) as scraper:
                     listings = scraper.scrape()
 
-                source_results = self._process_listings(listings)
+                    # Pass scraper to process_listings so it can fetch detail pages
+                    source_results = self._process_listings(listings, scraper=scraper)
                 results["total_found"] += source_results["found"]
                 results["new_listings"] += source_results["new"]
                 results["updated_listings"] += source_results["updated"]
@@ -67,12 +68,43 @@ class ScraperService:
 
         return results
 
-    def _process_listings(self, scraped_listings: list[ScrapedListing]) -> dict:
-        """Process scraped listings and update database."""
+    def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None) -> dict:
+        """Process scraped listings and update database.
+
+        If scraper is provided and listing is missing key data, will fetch detail page.
+        """
         results = {"found": len(scraped_listings), "new": 0, "updated": 0}
 
         with SessionLocal() as session:
             for scraped in scraped_listings:
+                # Check if we're missing important data and should fetch detail page
+                missing_key_data = (
+                    scraped.bedrooms is None or
+                    scraped.bathrooms is None or
+                    scraped.sqft is None or
+                    not scraped.features
+                )
+
+                if missing_key_data and scraper and scraped.url:
+                    try:
+                        print(f"[scraper] Fetching detail page: {scraped.url}")
+                        details = scraper.scrape_detail_page(scraped.url)
+
+                        # Fill in missing data
+                        if details.get("bedrooms") and scraped.bedrooms is None:
+                            scraped.bedrooms = details["bedrooms"]
+                        if details.get("bathrooms") and scraped.bathrooms is None:
+                            scraped.bathrooms = details["bathrooms"]
+                        if details.get("sqft") and scraped.sqft is None:
+                            scraped.sqft = details["sqft"]
+                        if details.get("description") and not scraped.description:
+                            scraped.description = details["description"]
+                        if details.get("features"):
+                            scraped.features = details["features"]
+
+                    except Exception as e:
+                        print(f"[scraper] Error fetching detail page: {e}")
+
                 existing = self._find_existing(session, scraped)
 
                 if existing:
@@ -145,6 +177,18 @@ class ScraperService:
         listing.url = scraped.url or listing.url  # Update URL in case it changed
         listing.is_active = True
         listing.last_seen = datetime.utcnow()
+
+        # Update specs if newly found
+        if scraped.bedrooms and not listing.bedrooms:
+            listing.bedrooms = scraped.bedrooms
+        if scraped.bathrooms and not listing.bathrooms:
+            listing.bathrooms = scraped.bathrooms
+        if scraped.sqft and not listing.sqft:
+            listing.sqft = scraped.sqft
+
+        # Update features if found
+        if scraped.features:
+            listing.features = ",".join(scraped.features)
 
         # Re-run matching in case criteria changed
         self.matcher.update_listing_match(listing)

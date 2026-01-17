@@ -1,4 +1,12 @@
-"""Scraper for Olympic Landlord & Rental Services (olyrents.com)."""
+"""Scraper for Olympic Landlord & Rental Services (olyrents.com).
+
+Based on XPath analysis from user:
+- Listings are in deeply nested div structure
+- Each listing: div/div[1] for image, div/div[2] for info
+- Address: div[2]/div[2]
+- Price: div[2]/div[3]/div[1]/span/span
+- Image: div[1]/div/div[1]/div[1]
+"""
 
 import re
 from typing import Optional
@@ -21,93 +29,211 @@ class OlyrentsScraper(BaseScraper):
         try:
             soup = self.fetch_page(self.base_url)
 
-            # Debug: uncomment to see the HTML structure
-            # print(soup.prettify()[:5000])
+            print(f"[olyrents] Page title: {soup.title.string if soup.title else 'No title'}")
 
-            # Try multiple common selectors for property listings
             listing_elements = self._find_listing_elements(soup)
+            print(f"[olyrents] Found {len(listing_elements)} listing elements")
 
             for element in listing_elements:
                 listing = self._parse_listing(element)
                 if listing:
                     listings.append(listing)
+                    print(f"[olyrents] Parsed: {listing.title[:50]}... - ${listing.rent or 'N/A'}")
 
             print(f"[olyrents] Found {len(listings)} listings")
 
         except Exception as e:
             print(f"[olyrents] Error scraping: {e}")
+            import traceback
+            traceback.print_exc()
 
         return listings
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
-        """Find all listing elements on the page."""
-        # Try common selectors used by property management sites
+        """Find all listing elements on the page.
+
+        XPath shows deeply nested structure with numbered divs for each listing.
+        """
+        candidates = []
+
+        # Look for property containers that have both image and price
+        # Based on XPath: div containers with div[1] for image, div[2] for info
+
+        # Try common selectors first
         selectors = [
-            ".property-listing",
-            ".property-item",
-            ".listing-item",
-            ".property-card",
-            ".rental-listing",
-            "article.property",
-            ".property",
-            "[data-property]",
-            ".card.property",
-            ".listing",
-            # AppFolio (common property management software) selectors
-            ".listing-item__inner",
-            ".js-listing-item",
+            # Property listing patterns
+            ".property-listing", ".property-item", ".property-card",
+            ".listing-item", ".listing-card", ".rental-listing",
+            # AppFolio patterns
+            ".listing-item__inner", ".js-listing-item",
+            # Generic patterns
+            "[class*='property']", "[class*='listing']",
         ]
 
         for selector in selectors:
             elements = soup.select(selector)
-            if elements:
-                print(f"[olyrents] Found listings using selector: {selector}")
-                return elements
+            property_elements = [e for e in elements if self._looks_like_property(e)]
+            if property_elements:
+                print(f"[olyrents] Using selector: {selector} ({len(property_elements)} matches)")
+                return property_elements
 
-        # Fallback: look for links to property detail pages
+        # Fallback: find divs that match the XPath structure
+        # Looking for divs that contain:
+        # - An image div
+        # - An info div with price span
+        all_divs = soup.find_all("div")
+
+        for div in all_divs:
+            # Skip if too small
+            if len(div.get_text()) < 50:
+                continue
+
+            # Check for property-like content
+            if not self._looks_like_property(div):
+                continue
+
+            # Check for the expected structure: has child divs, one with image, one with price
+            child_divs = div.find_all("div", recursive=False)
+            if len(child_divs) >= 2:
+                has_image = div.find("img") is not None
+                has_price = bool(re.search(r'\$[\d,]+', div.get_text()))
+
+                if has_image and has_price:
+                    candidates.append(div)
+
+        # Deduplicate - remove nested elements
+        unique = []
+        for c in candidates:
+            is_nested = any(c in other.descendants for other in candidates if other != c)
+            if not is_nested:
+                unique.append(c)
+
+        if unique:
+            print(f"[olyrents] Found {len(unique)} via structure analysis")
+            return unique[:30]  # Limit
+
+        # Last resort: find links to detail pages and get parents
         links = soup.find_all("a", href=re.compile(r"/propert(y|ies)/\d+|/listing/"))
         if links:
-            print(f"[olyrents] Found {len(links)} property links")
-            # Get unique parent containers
-            parents = []
             seen = set()
+            parents = []
             for link in links:
                 parent = link.find_parent(["article", "div", "li"])
                 if parent and id(parent) not in seen:
                     seen.add(id(parent))
-                    parents.append(parent)
-            return parents
+                    if self._looks_like_property(parent):
+                        parents.append(parent)
+            if parents:
+                print(f"[olyrents] Found {len(parents)} via link patterns")
+                return parents
 
-        print("[olyrents] Warning: Could not find listing elements. Page structure may have changed.")
+        print("[olyrents] Warning: Could not find listing elements")
         return []
 
+    def _looks_like_property(self, element: Tag) -> bool:
+        """Check if an element looks like a property listing."""
+        text = element.get_text().lower()
+
+        has_price = bool(re.search(r'\$[\d,]+', text))
+        has_beds = bool(re.search(r'\d+\s*(?:bed|br|bedroom)', text))
+        has_baths = bool(re.search(r'\d+\.?\d*\s*(?:bath|ba)', text))
+        has_address = bool(re.search(r'\d+\s+\w+\s+(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|way|blvd)', text))
+        has_sqft = bool(re.search(r'\d+\s*(?:sq|sf)', text))
+
+        indicators = sum([has_price, has_beds, has_baths, has_address, has_sqft])
+        return indicators >= 2
+
     def _parse_listing(self, element: Tag) -> Optional[ScrapedListing]:
-        """Parse a single listing element."""
+        """Parse a single listing element.
+
+        XPath structure:
+        - div[1] = image container
+        - div[2] = info container
+          - div[2]/div[2] = address
+          - div[2]/div[3]/div[1]/span/span = price
+        """
         try:
-            # Extract URL
-            link = element.find("a", href=True)
-            if not link:
-                return None
+            # Get child divs
+            child_divs = element.find_all("div", recursive=False)
 
-            url = urljoin(self.base_url, link["href"])
+            image_url = None
+            detail_url = None
+            address = None
+            rent = None
 
-            # Generate source ID from URL
-            source_id = re.search(r"/(\d+)", url)
-            source_id = source_id.group(1) if source_id else url.split("/")[-1]
+            # Extract image
+            img = element.find("img")
+            if img:
+                image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                if image_url and not image_url.startswith("http"):
+                    image_url = urljoin(self.base_url, image_url)
 
-            # Extract title/address
-            title = self._extract_title(element)
-            if not title:
-                title = f"Property {source_id}"
+            # Extract URL from link
+            links = element.find_all("a", href=True)
+            for link in links:
+                href = link.get("href", "")
+                if re.search(r"/propert(y|ies)/|/listing/|/\d{4,}", href, re.I):
+                    detail_url = urljoin(self.base_url, href)
+                    break
 
-            # Extract price
-            rent = self._extract_rent(element)
+            if not detail_url and links:
+                detail_url = urljoin(self.base_url, links[0]["href"])
 
-            # Extract bed/bath/sqft
+            if not detail_url:
+                detail_url = self.base_url
+
+            # Try to parse based on XPath structure
+            # Look for address in div structure
+            if len(child_divs) >= 2:
+                info_div = child_divs[1] if len(child_divs) > 1 else child_divs[0]
+                info_child_divs = info_div.find_all("div", recursive=False)
+
+                # Address is typically in div[2] (second child of info container)
+                if len(info_child_divs) >= 2:
+                    addr_elem = info_child_divs[1]  # div[2] (0-indexed = 1)
+                    address = self.clean_text(addr_elem.get_text())
+
+                # Price is in nested spans: div[3]/div[1]/span/span
+                if len(info_child_divs) >= 3:
+                    price_container = info_child_divs[2]  # div[3]
+                    spans = price_container.find_all("span")
+                    for span in spans:
+                        rent = self.parse_rent(span.get_text())
+                        if rent and 500 <= rent <= 10000:
+                            break
+
+            # Fallback extractions
+            if not address:
+                address = self._extract_address_text(element)
+
+            if not rent:
+                rent = self._extract_rent(element)
+
+            # Extract specs from full text
             bedrooms, bathrooms, sqft = self._extract_specs(element)
 
-            # Extract address components
-            address, city, state, zip_code = self._extract_address(element, title)
+            # Extract city/state/zip
+            text = element.get_text()
+            zip_code = self.extract_zip_code(text)
+
+            city = None
+            state = None
+            city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino)', text, re.I)
+            if city_match:
+                city = city_match.group(1).title()
+                state = "WA"
+
+            # Generate source ID
+            source_id = None
+            if detail_url:
+                id_match = re.search(r"/(\d{4,})", detail_url)
+                if id_match:
+                    source_id = id_match.group(1)
+
+            if not source_id:
+                source_id = str(abs(hash(detail_url or address or text[:50])))[:12]
+
+            title = address or f"OlyRents Property {source_id}"
 
             # Extract description
             description = self._extract_description(element)
@@ -115,7 +241,7 @@ class OlyrentsScraper(BaseScraper):
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=url,
+                url=detail_url,
                 title=title,
                 address=address,
                 city=city or "Olympia",
@@ -126,36 +252,50 @@ class OlyrentsScraper(BaseScraper):
                 bathrooms=bathrooms,
                 sqft=sqft,
                 description=description,
+                image_url=image_url,
             )
 
         except Exception as e:
             print(f"[olyrents] Error parsing listing: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
-    def _extract_title(self, element: Tag) -> Optional[str]:
-        """Extract listing title."""
-        # Try common title selectors
-        for selector in [".property-title", ".listing-title", "h2", "h3", ".title", ".address"]:
-            title_elem = element.select_one(selector)
-            if title_elem:
-                return self.clean_text(title_elem.get_text())
+    def _extract_address_text(self, element: Tag) -> Optional[str]:
+        """Extract address from element text."""
+        # Try common address selectors
+        for selector in [".address", ".property-address", ".location", "h2", "h3", ".title"]:
+            addr_elem = element.select_one(selector)
+            if addr_elem:
+                text = self.clean_text(addr_elem.get_text())
+                if text and len(text) > 5:
+                    return text
+
+        # Look for address pattern
+        text = element.get_text()
+        addr_match = re.search(r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd)[^,\n]*)', text, re.I)
+        if addr_match:
+            return self.clean_text(addr_match.group(1))
+
         return None
 
     def _extract_rent(self, element: Tag) -> Optional[int]:
         """Extract rent amount."""
         # Look for price elements
-        for selector in [".price", ".rent", ".listing-price", ".property-price", ".amount"]:
-            price_elem = element.select_one(selector)
-            if price_elem:
+        for selector in [".price", ".rent", "[class*='price']", "[class*='rent']", "span"]:
+            price_elems = element.select(selector)
+            for price_elem in price_elems:
                 rent = self.parse_rent(price_elem.get_text())
-                if rent:
+                if rent and 500 <= rent <= 10000:
                     return rent
 
         # Fallback: search text for dollar amounts
         text = element.get_text()
-        match = re.search(r'\$\s*([\d,]+)', text)
-        if match:
-            return self.parse_rent(match.group(1))
+        matches = re.findall(r'\$\s*([\d,]+)', text)
+        for match in matches:
+            rent = self.parse_rent(match)
+            if rent and 500 <= rent <= 10000:
+                return rent
 
         return None
 
@@ -168,52 +308,40 @@ class OlyrentsScraper(BaseScraper):
         text = element.get_text().lower()
 
         # Bedrooms
-        bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)', text)
-        if bed_match:
-            bedrooms = int(bed_match.group(1))
-
-        # Bathrooms
-        bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)', text)
-        if bath_match:
-            bathrooms = float(bath_match.group(1))
-
-        # Square footage
-        sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', text)
-        if sqft_match:
-            sqft = int(sqft_match.group(1).replace(',', ''))
-
-        return bedrooms, bathrooms, sqft
-
-    def _extract_address(self, element: Tag, title: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        """Extract address components."""
-        address = None
-        city = None
-        state = None
-        zip_code = None
-
-        # Try to find address element
-        for selector in [".address", ".property-address", ".location", ".listing-address"]:
-            addr_elem = element.select_one(selector)
-            if addr_elem:
-                addr_text = self.clean_text(addr_elem.get_text())
-                address = addr_text
+        bed_patterns = [
+            r'(\d+)\s*(?:bed|br|bedroom)s?',
+            r'(\d+)\s*bd',
+            r'beds?[:\s]*(\d+)',
+        ]
+        for pattern in bed_patterns:
+            match = re.search(pattern, text)
+            if match:
+                bedrooms = int(match.group(1))
                 break
 
-        # If no specific address found, use title
-        if not address:
-            address = title
+        # Bathrooms
+        bath_patterns = [
+            r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?',
+            r'baths?[:\s]*(\d+\.?\d*)',
+        ]
+        for pattern in bath_patterns:
+            match = re.search(pattern, text)
+            if match:
+                bathrooms = float(match.group(1))
+                break
 
-        # Extract ZIP code
-        text = element.get_text()
-        zip_code = self.extract_zip_code(text)
+        # Square footage
+        sqft_patterns = [
+            r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)',
+            r'([\d,]+)\s*square\s*feet',
+        ]
+        for pattern in sqft_patterns:
+            match = re.search(pattern, text)
+            if match:
+                sqft = int(match.group(1).replace(',', ''))
+                break
 
-        # Look for city/state pattern
-        cs_match = re.search(r'([\w\s]+),\s*([A-Z]{2})', text)
-        if cs_match:
-            city = cs_match.group(1).strip()
-            state = cs_match.group(2)
-
-        return address, city, state, zip_code
+        return bedrooms, bathrooms, sqft
 
     def _extract_description(self, element: Tag) -> Optional[str]:
         """Extract listing description."""
@@ -221,6 +349,48 @@ class OlyrentsScraper(BaseScraper):
             desc_elem = element.select_one(selector)
             if desc_elem:
                 desc = self.clean_text(desc_elem.get_text())
-                if len(desc) > 20:  # Minimum length for a real description
-                    return desc
+                if len(desc) > 20:
+                    return desc[:500]
         return None
+
+    def scrape_detail_page(self, url: str) -> dict:
+        """Scrape additional details from individual listing page."""
+        details = {
+            "bedrooms": None,
+            "bathrooms": None,
+            "sqft": None,
+            "description": None,
+            "features": [],
+        }
+
+        try:
+            soup = self.fetch_page(url)
+            text = soup.get_text().lower()
+
+            # Extract specs
+            details["bedrooms"], details["bathrooms"], details["sqft"] = self._extract_specs(soup)
+
+            # Look for description
+            for selector in [".description", ".property-description", "[class*='description']", "p"]:
+                elems = soup.select(selector)
+                for elem in elems:
+                    desc = self.clean_text(elem.get_text())
+                    if len(desc) > 50:
+                        details["description"] = desc[:1000]
+                        break
+                if details["description"]:
+                    break
+
+            # Look for features/keywords
+            keywords = ["office", "fence", "fenced yard", "garage", "updated", "renovated",
+                       "washer", "dryer", "w/d", "pet friendly", "pets ok", "dog",
+                       "bonus room", "extra room", "den", "storage"]
+
+            for keyword in keywords:
+                if keyword in text:
+                    details["features"].append(keyword)
+
+        except Exception as e:
+            print(f"[olyrents] Error scraping detail page {url}: {e}")
+
+        return details

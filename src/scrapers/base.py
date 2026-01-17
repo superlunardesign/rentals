@@ -160,3 +160,82 @@ class BaseScraper(ABC):
         if match:
             return match.group(1)
         return None
+
+    @staticmethod
+    def extract_keywords(text: str, keywords: list[str] = None) -> list[str]:
+        """Extract matching keywords from text.
+
+        Default keywords are common rental features.
+        """
+        if keywords is None:
+            keywords = [
+                "office", "fence", "fenced yard", "garage", "carport",
+                "updated", "renovated", "remodeled", "new",
+                "washer", "dryer", "w/d", "laundry",
+                "pet friendly", "pets ok", "pets allowed", "dog", "cat",
+                "bonus room", "extra room", "den", "storage",
+                "dishwasher", "air conditioning", "a/c", "ac",
+                "fireplace", "patio", "deck", "yard",
+                "hardwood", "granite", "stainless",
+            ]
+
+        if not text:
+            return []
+
+        text_lower = text.lower()
+        found = []
+        for keyword in keywords:
+            if keyword.lower() in text_lower:
+                found.append(keyword)
+        return found
+
+    def scrape_detail_page(self, url: str) -> dict:
+        """Scrape additional details from individual listing page.
+
+        Override in subclasses for site-specific parsing.
+        Returns dict with: bedrooms, bathrooms, sqft, description, features
+        """
+        details = {
+            "bedrooms": None,
+            "bathrooms": None,
+            "sqft": None,
+            "description": None,
+            "features": [],
+        }
+
+        try:
+            soup = self.fetch_page(url)
+            text = soup.get_text()
+            text_lower = text.lower()
+
+            # Extract specs using regex
+            bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text_lower)
+            if bed_match:
+                details["bedrooms"] = int(bed_match.group(1))
+
+            bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text_lower)
+            if bath_match:
+                details["bathrooms"] = float(bath_match.group(1))
+
+            sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf|square feet)', text_lower)
+            if sqft_match:
+                details["sqft"] = int(sqft_match.group(1).replace(',', ''))
+
+            # Look for description
+            for selector in [".description", ".property-description", "[class*='description']"]:
+                elems = soup.select(selector)
+                for elem in elems:
+                    desc = self.clean_text(elem.get_text())
+                    if len(desc) > 50:
+                        details["description"] = desc[:1000]
+                        break
+                if details["description"]:
+                    break
+
+            # Extract keywords/features
+            details["features"] = self.extract_keywords(text)
+
+        except Exception as e:
+            print(f"[{self.source_name}] Error scraping detail page {url}: {e}")
+
+        return details

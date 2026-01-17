@@ -61,6 +61,11 @@ sources:
     url: "https://www.amh.com/query?criteria=Tumwater%2C+WA"
     enabled: true
 
+  - name: "AMH Olympia"
+    scraper: "amh"
+    url: "https://www.amh.com/query?criteria=Olympia%2C+WA"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1

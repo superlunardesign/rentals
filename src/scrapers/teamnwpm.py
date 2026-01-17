@@ -1,4 +1,11 @@
-"""Scraper for Team NW Property Management (teamnwpm.com)."""
+"""Scraper for Team NW Property Management (teamnwpm.com).
+
+Based on XPath analysis from user:
+- Listings are in main > div[2] containers
+- Image/link: div[1]/a/div/img
+- Property info card: div[2]
+- Price: div[2]/div/dl/div[1]/dd (uses dl/dd description list)
+"""
 
 import re
 from typing import Optional
@@ -21,9 +28,9 @@ class TeamNWPMScraper(BaseScraper):
         try:
             soup = self.fetch_page(self.base_url)
 
-            # Debug: print a snippet of the HTML to help identify structure
             print(f"[teamnwpm] Page title: {soup.title.string if soup.title else 'No title'}")
 
+            # Based on XPath: main/div[2]/div[2] structure
             listing_elements = self._find_listing_elements(soup)
             print(f"[teamnwpm] Found {len(listing_elements)} listing elements")
 
@@ -31,7 +38,7 @@ class TeamNWPMScraper(BaseScraper):
                 listing = self._parse_listing(element)
                 if listing:
                     listings.append(listing)
-                    print(f"[teamnwpm] Parsed: {listing.title} - ${listing.rent or 'N/A'} - {listing.url}")
+                    print(f"[teamnwpm] Parsed: {listing.title[:50]}... - ${listing.rent or 'N/A'}")
 
             print(f"[teamnwpm] Successfully parsed {len(listings)} listings")
 
@@ -43,19 +50,32 @@ class TeamNWPMScraper(BaseScraper):
         return listings
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
-        """Find all listing elements on the page."""
+        """Find all listing elements on the page.
 
-        # Common property listing selectors - try most specific first
+        XPath structure shows: main/div[2]/div[2]/div[1] for each listing
+        Each property appears to be a div containing image div and info div.
+        """
+        # Find main element
+        main = soup.find("main")
+        if not main:
+            main = soup  # Fallback to whole document
+
+        # Look for containers with property-like content
+        # The XPath div[2]/div[2] suggests nested div structure
+        # Look for div containers that have both images and price info
+
+        candidates = []
+
+        # Try to find property containers
+        # Common patterns: grid items, cards, listing containers
         selectors = [
-            # Rent Manager / property management software patterns
-            ".rm-property", ".rentmanager-listing", ".listing-item",
-            # WordPress theme patterns
-            ".property-listing", ".property-item", ".property-card",
-            ".rental-listing", ".home-listing", ".available-home",
-            # Generic patterns
-            ".property", ".listing", ".rental",
-            # Card layouts
-            ".card", "article",
+            # Main content area patterns
+            "main > div > div",
+            # Card/grid patterns
+            ".property-card", ".listing-card", ".home-card",
+            ".property-item", ".listing-item", ".home-item",
+            # Generic containers with property content
+            "[class*='property']", "[class*='listing']", "[class*='home']",
         ]
 
         for selector in selectors:
@@ -66,36 +86,39 @@ class TeamNWPMScraper(BaseScraper):
                 print(f"[teamnwpm] Using selector: {selector} ({len(property_elements)} matches)")
                 return property_elements
 
-        # Fallback: find all links that look like property detail pages
-        all_links = soup.find_all("a", href=True)
-        property_links = []
-        seen_hrefs = set()
+        # Fallback: find divs that have the dl/dd structure (description list for specs)
+        dl_elements = soup.find_all("dl")
+        for dl in dl_elements:
+            # Get parent container that includes both image and specs
+            parent = dl.find_parent("div")
+            if parent:
+                # Go up to find the full listing container
+                container = parent.find_parent("div")
+                if container and self._looks_like_property(container):
+                    candidates.append(container)
 
-        for link in all_links:
-            href = link.get("href", "")
-            # Look for property detail page patterns
-            if re.search(r"/(property|home|listing|rental|unit|details)/|/\d{4,}|property[_-]?\d+", href, re.I):
-                if href not in seen_hrefs:
-                    seen_hrefs.add(href)
-                    # Get the parent container
-                    parent = link.find_parent(["article", "div", "li", "section"])
-                    if parent and self._looks_like_property(parent):
-                        property_links.append(parent)
+        if candidates:
+            # Deduplicate
+            seen = set()
+            unique = []
+            for c in candidates:
+                c_id = id(c)
+                if c_id not in seen:
+                    seen.add(c_id)
+                    unique.append(c)
+            print(f"[teamnwpm] Found {len(unique)} via dl/dd pattern")
+            return unique
 
-        if property_links:
-            print(f"[teamnwpm] Found {len(property_links)} via link patterns")
-            return property_links
-
-        # Last resort: look for any div/article with property-like content
-        containers = soup.find_all(["div", "article", "li"])
-        property_containers = [c for c in containers if self._looks_like_property(c) and len(c.get_text()) > 50]
+        # Last resort: find all divs with property-like content
+        all_divs = soup.find_all("div")
+        property_divs = [d for d in all_divs if self._looks_like_property(d) and len(d.get_text()) > 50]
 
         # Deduplicate by removing nested elements
         unique = []
-        for c in property_containers:
-            is_nested = any(c in other.descendants for other in property_containers if other != c)
+        for d in property_divs:
+            is_nested = any(d in other.descendants for other in property_divs if other != d)
             if not is_nested:
-                unique.append(c)
+                unique.append(d)
 
         if unique:
             print(f"[teamnwpm] Found {len(unique)} via content analysis")
@@ -120,30 +143,69 @@ class TeamNWPMScraper(BaseScraper):
         return indicators >= 2
 
     def _parse_listing(self, element: Tag) -> Optional[ScrapedListing]:
-        """Parse a single listing element."""
+        """Parse a single listing element.
+
+        XPath structure:
+        - div[1]/a/div/img = image and link
+        - div[2]/div/dl/div/dd = specs using description list
+        """
         try:
-            # Extract URL - look for the main link
-            url = self._extract_url(element)
+            # Get child divs - typically div[1] is image, div[2] is info
+            child_divs = element.find_all("div", recursive=False)
 
-            # Generate source ID from URL or content
-            source_id = self._extract_source_id(url, element)
+            image_url = None
+            detail_url = None
 
-            # Extract all the details
-            title = self._extract_title(element)
-            rent = self._extract_rent(element)
+            # Try to find image and link
+            # Look for img and anchor elements
+            img = element.find("img")
+            if img:
+                image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                if image_url and not image_url.startswith("http"):
+                    image_url = urljoin(self.base_url, image_url)
+
+            # Find primary link
+            links = element.find_all("a", href=True)
+            for link in links:
+                href = link.get("href", "")
+                # Prefer links that look like detail pages
+                if re.search(r"/(property|home|listing|rental|unit|details)/|\d{4,}", href, re.I):
+                    detail_url = urljoin(self.base_url, href)
+                    break
+
+            # Fallback to first link
+            if not detail_url and links:
+                detail_url = urljoin(self.base_url, links[0]["href"])
+
+            if not detail_url:
+                detail_url = self.base_url
+
+            # Extract rent from dl/dd structure (description list)
+            rent = self._extract_rent_from_dl(element)
+            if not rent:
+                rent = self._extract_rent(element)
+
+            # Extract specs
             bedrooms, bathrooms, sqft = self._extract_specs(element)
+
+            # Extract address/title
+            title = self._extract_title(element)
             address, city, state, zip_code = self._extract_address(element, title)
-            description = self._extract_description(element)
-            image_url = self._extract_image(element)
 
             # Use address as title if no title found
             if not title:
-                title = address or f"Property {source_id}"
+                title = address or f"Property"
+
+            # Generate source ID
+            source_id = self._extract_source_id(detail_url, element)
+
+            # Extract description
+            description = self._extract_description(element)
 
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=url,
+                url=detail_url,
                 title=title,
                 address=address,
                 city=city or "Olympia",
@@ -161,22 +223,57 @@ class TeamNWPMScraper(BaseScraper):
             print(f"[teamnwpm] Error parsing listing: {e}")
             return None
 
-    def _extract_url(self, element: Tag) -> str:
-        """Extract the listing detail URL."""
-        # Look for links that go to detail pages
-        links = element.find_all("a", href=True)
+    def _extract_rent_from_dl(self, element: Tag) -> Optional[int]:
+        """Extract rent from dl/dd description list structure.
 
-        for link in links:
-            href = link.get("href", "")
-            # Prefer links that look like detail pages
-            if re.search(r"/(property|home|listing|rental|unit|details)/|/\d{4,}", href, re.I):
-                return urljoin(self.base_url, href)
+        XPath: div/dl/div[1]/dd for price
+        """
+        # Find dl (description list) elements
+        dls = element.find_all("dl")
+        for dl in dls:
+            # Look for price in dd elements
+            dds = dl.find_all("dd")
+            for dd in dds:
+                text = dd.get_text()
+                rent = self.parse_rent(text)
+                if rent and 500 <= rent <= 10000:
+                    return rent
 
-        # Fallback to first link
-        if links:
-            return urljoin(self.base_url, links[0]["href"])
+            # Also check dt/dd pairs
+            dts = dl.find_all("dt")
+            for dt in dts:
+                dt_text = dt.get_text().lower()
+                if "rent" in dt_text or "price" in dt_text or "$" in dt_text:
+                    # Get next sibling dd
+                    dd = dt.find_next_sibling("dd")
+                    if dd:
+                        rent = self.parse_rent(dd.get_text())
+                        if rent:
+                            return rent
 
-        return self.base_url
+        return None
+
+    def _extract_rent(self, element: Tag) -> Optional[int]:
+        """Extract rent amount (fallback method)."""
+        # Look for price elements
+        for selector in [".price", ".rent", ".listing-price", ".property-price", "[class*='price']", "[class*='rent']"]:
+            price_elem = element.select_one(selector)
+            if price_elem:
+                rent = self.parse_rent(price_elem.get_text())
+                if rent:
+                    return rent
+
+        # Find all dollar amounts
+        text = element.get_text()
+        matches = re.findall(r'\$\s*([\d,]+)', text)
+
+        # Filter to reasonable rent amounts (exclude deposits, application fees)
+        for match in matches:
+            rent = self.parse_rent(match)
+            if rent and 500 <= rent <= 10000:
+                return rent
+
+        return None
 
     def _extract_source_id(self, url: str, element: Tag) -> str:
         """Extract a unique source ID."""
@@ -213,28 +310,6 @@ class TeamNWPMScraper(BaseScraper):
 
         return None
 
-    def _extract_rent(self, element: Tag) -> Optional[int]:
-        """Extract rent amount."""
-        # Look for price elements
-        for selector in [".price", ".rent", ".listing-price", ".property-price", "[class*='price']", "[class*='rent']"]:
-            price_elem = element.select_one(selector)
-            if price_elem:
-                rent = self.parse_rent(price_elem.get_text())
-                if rent:
-                    return rent
-
-        # Find all dollar amounts
-        text = element.get_text()
-        matches = re.findall(r'\$\s*([\d,]+)', text)
-
-        # Filter to reasonable rent amounts (exclude deposits, application fees)
-        for match in matches:
-            rent = self.parse_rent(match)
-            if rent and 500 <= rent <= 10000:
-                return rent
-
-        return None
-
     def _extract_specs(self, element: Tag) -> tuple[Optional[int], Optional[float], Optional[int]]:
         """Extract bedrooms, bathrooms, and square footage."""
         text = element.get_text().lower()
@@ -243,40 +318,60 @@ class TeamNWPMScraper(BaseScraper):
         bathrooms = None
         sqft = None
 
-        # Bedrooms - try multiple patterns
-        bed_patterns = [
-            r'(\d+)\s*(?:bed|br|bedroom)s?',
-            r'(\d+)\s*bd',
-            r'beds?[:\s]*(\d+)',
-            r'bedroom[:\s]*(\d+)',
-        ]
-        for pattern in bed_patterns:
-            match = re.search(pattern, text)
-            if match:
-                bedrooms = int(match.group(1))
-                break
+        # Check dl/dd structure first
+        dls = element.find_all("dl")
+        for dl in dls:
+            dl_text = dl.get_text().lower()
 
-        # Bathrooms
-        bath_patterns = [
-            r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?',
-            r'baths?[:\s]*(\d+\.?\d*)',
-        ]
-        for pattern in bath_patterns:
-            match = re.search(pattern, text)
-            if match:
-                bathrooms = float(match.group(1))
-                break
+            # Bedrooms
+            bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', dl_text)
+            if bed_match:
+                bedrooms = int(bed_match.group(1))
 
-        # Square footage
-        sqft_patterns = [
-            r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)',
-            r'([\d,]+)\s*square\s*feet',
-        ]
-        for pattern in sqft_patterns:
-            match = re.search(pattern, text)
-            if match:
-                sqft = int(match.group(1).replace(',', ''))
-                break
+            # Bathrooms
+            bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', dl_text)
+            if bath_match:
+                bathrooms = float(bath_match.group(1))
+
+            # Square footage
+            sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', dl_text)
+            if sqft_match:
+                sqft = int(sqft_match.group(1).replace(',', ''))
+
+        # Fallback to full element text
+        if not bedrooms:
+            bed_patterns = [
+                r'(\d+)\s*(?:bed|br|bedroom)s?',
+                r'(\d+)\s*bd',
+                r'beds?[:\s]*(\d+)',
+            ]
+            for pattern in bed_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    bedrooms = int(match.group(1))
+                    break
+
+        if not bathrooms:
+            bath_patterns = [
+                r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?',
+                r'baths?[:\s]*(\d+\.?\d*)',
+            ]
+            for pattern in bath_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    bathrooms = float(match.group(1))
+                    break
+
+        if not sqft:
+            sqft_patterns = [
+                r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)',
+                r'([\d,]+)\s*square\s*feet',
+            ]
+            for pattern in sqft_patterns:
+                match = re.search(pattern, text)
+                if match:
+                    sqft = int(match.group(1).replace(',', ''))
+                    break
 
         return bedrooms, bathrooms, sqft
 
@@ -321,20 +416,69 @@ class TeamNWPMScraper(BaseScraper):
                     return desc[:500]  # Truncate long descriptions
         return None
 
-    def _extract_image(self, element: Tag) -> Optional[str]:
-        """Extract listing image URL."""
-        # Look for img tags
-        img = element.find("img")
-        if img:
-            src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
-            if src:
-                return urljoin(self.base_url, src)
+    def scrape_detail_page(self, url: str) -> dict:
+        """Scrape additional details from individual listing page."""
+        details = {
+            "bedrooms": None,
+            "bathrooms": None,
+            "sqft": None,
+            "description": None,
+            "features": [],
+        }
 
-        # Check for background image in style
-        for elem in element.find_all(style=True):
-            style = elem.get("style", "")
-            bg_match = re.search(r'background(?:-image)?:\s*url\(["\']?([^"\')\s]+)', style)
-            if bg_match:
-                return urljoin(self.base_url, bg_match.group(1))
+        try:
+            soup = self.fetch_page(url)
+            text = soup.get_text()
+            text_lower = text.lower()
 
-        return None
+            # Extract specs from dl/dd structure if present
+            dls = soup.find_all("dl")
+            for dl in dls:
+                dl_text = dl.get_text().lower()
+
+                bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', dl_text)
+                if bed_match and not details["bedrooms"]:
+                    details["bedrooms"] = int(bed_match.group(1))
+
+                bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', dl_text)
+                if bath_match and not details["bathrooms"]:
+                    details["bathrooms"] = float(bath_match.group(1))
+
+                sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', dl_text)
+                if sqft_match and not details["sqft"]:
+                    details["sqft"] = int(sqft_match.group(1).replace(',', ''))
+
+            # Fallback to full page text
+            if not details["bedrooms"]:
+                bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text_lower)
+                if bed_match:
+                    details["bedrooms"] = int(bed_match.group(1))
+
+            if not details["bathrooms"]:
+                bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text_lower)
+                if bath_match:
+                    details["bathrooms"] = float(bath_match.group(1))
+
+            if not details["sqft"]:
+                sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf|square feet)', text_lower)
+                if sqft_match:
+                    details["sqft"] = int(sqft_match.group(1).replace(',', ''))
+
+            # Look for description
+            for selector in [".description", ".property-description", "[class*='description']", ".content", "p"]:
+                elems = soup.select(selector)
+                for elem in elems:
+                    desc = self.clean_text(elem.get_text())
+                    if len(desc) > 50:
+                        details["description"] = desc[:1000]
+                        break
+                if details["description"]:
+                    break
+
+            # Extract keywords/features
+            details["features"] = self.extract_keywords(text)
+
+        except Exception as e:
+            print(f"[teamnwpm] Error scraping detail page {url}: {e}")
+
+        return details
