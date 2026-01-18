@@ -132,13 +132,25 @@ class OlyrentsScraper(BrowserScraper):
             address = None
             rent = None
 
-            # Extract image - try olyrents-specific .card-image first
-            img_container = element.select_one(".card-image")
-            img = img_container.find("img") if img_container else element.find("img")
-            if img:
-                image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
-                if image_url and not image_url.startswith("http"):
-                    image_url = urljoin(self.base_url, image_url)
+            # Extract image - olyrents uses background-image in .slider_image divs
+            slider_img = element.select_one(".slider_image")
+            if slider_img:
+                style = slider_img.get("style", "")
+                # Extract URL from background-image: url("...")
+                bg_match = re.search(r'background-image:\s*url\(["\']?([^"\')\s]+)["\']?\)', style)
+                if bg_match:
+                    image_url = bg_match.group(1)
+                    print(f"[olyrents] Found image from background-image: {image_url[:50]}...")
+
+            # Fallback to regular img tag
+            if not image_url:
+                img_container = element.select_one(".card-image")
+                img = img_container.find("img") if img_container else element.find("img")
+                if img:
+                    image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+
+            if image_url and not image_url.startswith("http"):
+                image_url = urljoin(self.base_url, image_url)
 
             # Extract URL from link
             links = element.find_all("a", href=True)
