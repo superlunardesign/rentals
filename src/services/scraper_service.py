@@ -32,6 +32,7 @@ class ScraperService:
             "total_found": 0,
             "new_listings": 0,
             "updated_listings": 0,
+            "removed_listings": 0,
             "errors": [],
             "by_source": {},
         }
@@ -52,10 +53,15 @@ class ScraperService:
                     listings = scraper.scrape()
 
                     # Pass scraper to process_listings so it can fetch detail pages
-                    source_results = self._process_listings(listings, scraper=scraper)
+                    source_results = self._process_listings(
+                        listings,
+                        scraper=scraper,
+                        source_name=scraper.source_name
+                    )
                 results["total_found"] += source_results["found"]
                 results["new_listings"] += source_results["new"]
                 results["updated_listings"] += source_results["updated"]
+                results["removed_listings"] += source_results.get("removed", 0)
                 results["by_source"][source.name] = source_results
 
             except Exception as e:
@@ -64,16 +70,21 @@ class ScraperService:
                 results["errors"].append(error_msg)
 
         print(f"\n[scraper] Complete: {results['total_found']} found, "
-              f"{results['new_listings']} new, {results['updated_listings']} updated")
+              f"{results['new_listings']} new, {results['updated_listings']} updated, "
+              f"{results['removed_listings']} removed")
 
         return results
 
-    def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None) -> dict:
+    def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None, source_name: str = None) -> dict:
         """Process scraped listings and update database.
 
         If scraper is provided and listing is missing key data, will fetch detail page.
+        Removes listings from this source that weren't found in this scrape.
         """
-        results = {"found": len(scraped_listings), "new": 0, "updated": 0}
+        results = {"found": len(scraped_listings), "new": 0, "updated": 0, "removed": 0}
+
+        # Track which source_ids we found in this scrape
+        found_source_ids = set()
 
         with SessionLocal() as session:
             for scraped in scraped_listings:
@@ -105,6 +116,10 @@ class ScraperService:
                     except Exception as e:
                         print(f"[scraper] Error fetching detail page: {e}")
 
+                # Track this source_id as found
+                source_id = scraped.source_id or scraped.generate_id()
+                found_source_ids.add(source_id)
+
                 existing = self._find_existing(session, scraped)
 
                 if existing:
@@ -116,6 +131,18 @@ class ScraperService:
                     listing = self._create_listing(scraped)
                     session.add(listing)
                     results["new"] += 1
+
+            # Remove listings from this source that weren't found in this scrape
+            if source_name and found_source_ids:
+                stale_listings = session.query(Listing).filter(
+                    Listing.source_name == source_name,
+                    ~Listing.source_id.in_(found_source_ids)
+                ).all()
+
+                for stale in stale_listings:
+                    print(f"[scraper] Removing stale listing: {stale.title}")
+                    session.delete(stale)
+                    results["removed"] += 1
 
             session.commit()
 
