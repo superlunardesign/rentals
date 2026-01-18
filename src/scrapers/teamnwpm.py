@@ -1,4 +1,7 @@
-"""Scraper for Team NW Property Management (teamnwpm.com)."""
+"""Scraper for Team NW Property Management (teamnwpm.com).
+
+They use an AppFolio iframe embed, so we scrape the AppFolio listings directly.
+"""
 
 import re
 from typing import Optional
@@ -9,11 +12,11 @@ from .base import BaseScraper, ScrapedListing
 
 
 class TeamNWPMScraper(BaseScraper):
-    """Scraper for teamnwpm.com property listings."""
+    """Scraper for teamnwpm.com property listings via AppFolio."""
 
-    def __init__(self, url: str = "https://teamnwpm.com/available-homes/"):
+    def __init__(self, url: str = "https://capitalproperties.appfolio.com/listings"):
         super().__init__(source_name="teamnwpm", base_url=url)
-        # Add referer header to look like we came from their site
+        # Add referer header
         self.client.headers["Referer"] = "https://teamnwpm.com/"
 
     def scrape(self) -> list[ScrapedListing]:
@@ -47,33 +50,19 @@ class TeamNWPMScraper(BaseScraper):
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
         """Find all listing elements on the page."""
-        # Houzez theme (WordPress) specific selectors first
+        # AppFolio listings have IDs like "listing_521"
         selectors = [
-            ".item-wrap",  # Houzez main listing wrapper
-            ".property-item",  # Houzez property item
-            ".houzez-property-card",  # Houzez card
-            ".property-box",  # Another Houzez variant
+            "[id^='listing_']",  # AppFolio listing cards
             ".listing-item",
-            ".property-card", ".listing-card", ".home-card",
-            ".property-item", ".home-item",
-            "article.property",
-            "[class*='property-item']",
-            "[class*='item-wrap']",
+            ".property-card",
+            "[class*='listing']",
         ]
 
         for selector in selectors:
             elements = soup.select(selector)
             if elements:
-                # For Houzez, don't filter too strictly - trust the selector
                 print(f"[teamnwpm] Using selector: {selector} ({len(elements)} matches)")
-                # Filter to only those that look like properties
-                property_elements = [e for e in elements if self._looks_like_property(e)]
-                if property_elements:
-                    return property_elements
-                # If none pass the filter, return all (Houzez structure might be different)
-                if len(elements) <= 30:
-                    print(f"[teamnwpm] Returning all {len(elements)} elements (filter too strict)")
-                    return elements
+                return elements
 
         # Fallback: find divs with dl/dd (description list for specs)
         dl_elements = soup.find_all("dl")
@@ -127,47 +116,88 @@ class TeamNWPMScraper(BaseScraper):
         return indicators >= 2
 
     def _parse_listing(self, element: Tag) -> Optional[ScrapedListing]:
-        """Parse a single listing element."""
+        """Parse a single AppFolio listing element."""
         try:
             image_url = None
             detail_url = None
 
-            # Find image
-            img = element.find("img")
+            # AppFolio structure: image is in a > div > img
+            img = element.select_one("a img")
+            if not img:
+                img = element.find("img")
             if img:
-                image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                image_url = img.get("src") or img.get("data-src")
                 if image_url and not image_url.startswith("http"):
                     image_url = urljoin(self.base_url, image_url)
 
-            # Find link
-            links = element.find_all("a", href=True)
-            for link in links:
-                href = link.get("href", "")
-                if re.search(r"/(property|home|listing|rental|unit|details)/|\d{4,}", href, re.I):
-                    detail_url = urljoin(self.base_url, href)
-                    break
-
-            if not detail_url and links:
-                detail_url = urljoin(self.base_url, links[0]["href"])
-
-            if not detail_url:
+            # Find link to detail page
+            link = element.select_one("a[href]")
+            if link:
+                detail_url = urljoin(self.base_url, link.get("href", ""))
+            else:
                 detail_url = self.base_url
 
-            # Extract rent
-            rent = self._extract_rent(element)
+            # AppFolio uses dl/dd for specs - find all dd elements
+            dd_elements = element.select("dl dd")
+            rent = None
+            sqft = None
+            bedrooms = None
+            bathrooms = None
 
-            # Extract specs
-            bedrooms, bathrooms, sqft = self._extract_specs(element)
+            for dd in dd_elements:
+                text = dd.get_text().strip()
+                # Check what type of data this is
+                if "$" in text and not rent:
+                    rent = self.parse_rent(text)
+                elif "sq" in text.lower() or "ft" in text.lower():
+                    sqft = self.parse_sqft(text)
+                elif re.search(r'\d+\s*(bed|br|bd)', text.lower()):
+                    bedrooms = self.parse_bedrooms(text)
+                elif re.search(r'\d+\.?\d*\s*(bath|ba)', text.lower()):
+                    bathrooms = self.parse_bathrooms(text)
 
-            # Extract title/address
-            title = self._extract_title(element)
-            address, city, state, zip_code = self._extract_address(element, title)
+            # If structured parsing didn't work, try regex on all text
+            if not rent or not bedrooms:
+                all_text = element.get_text()
+                if not rent:
+                    rent = self.parse_rent(all_text)
+                if not bedrooms:
+                    bedrooms = self.parse_bedrooms(all_text)
+                if not bathrooms:
+                    bathrooms = self.parse_bathrooms(all_text)
+                if not sqft:
+                    sqft = self.parse_sqft(all_text)
 
-            if not title:
-                title = address or "Property"
+            # AppFolio address is in p > span
+            address = None
+            addr_elem = element.select_one("p span")
+            if addr_elem:
+                address = self.clean_text(addr_elem.get_text())
 
-            # Generate source ID
-            source_id = self._extract_source_id(detail_url, element)
+            if not address:
+                # Fallback: look for address pattern in text
+                text = element.get_text()
+                addr_match = re.search(r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd)[^,\n]*)', text, re.I)
+                if addr_match:
+                    address = self.clean_text(addr_match.group(1))
+
+            # Extract city/state/zip from address
+            city = None
+            state = None
+            zip_code = None
+            if address:
+                zip_code = self.extract_zip_code(address)
+                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis)', address, re.I)
+                if city_match:
+                    city = city_match.group(1).title()
+                    state = "WA"
+
+            # Source ID from element ID (e.g., "listing_521")
+            source_id = element.get("id", "")
+            if not source_id or not source_id.startswith("listing_"):
+                source_id = str(abs(hash(detail_url)))[:12]
+
+            title = address or f"Property {source_id}"
 
             return ScrapedListing(
                 source_name=self.source_name,
