@@ -1,27 +1,29 @@
-"""Scraper for Olympic Landlord & Rental Services (olyrents.com)."""
+"""Scraper for Olympic Landlord & Rental Services (olyrents.com).
+
+Uses Playwright browser because the site loads listings via JavaScript (PropertyWare plugin).
+"""
 
 import re
 from typing import Optional
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
-from .base import BaseScraper, ScrapedListing
+from .browser_scraper import BrowserScraper
+from .base import ScrapedListing
 
 
-class OlyrentsScraper(BaseScraper):
-    """Scraper for olyrents.com property listings."""
+class OlyrentsScraper(BrowserScraper):
+    """Scraper for olyrents.com property listings using Playwright browser."""
 
     def __init__(self, url: str = "https://olyrents.com/properties/olympia/"):
         super().__init__(source_name="olyrents", base_url=url)
-        # Add referer header to look like we came from their site
-        self.client.headers["Referer"] = "https://olyrents.com/"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all listings from olyrents.com."""
         listings = []
 
         try:
-            print(f"[olyrents] Fetching page...")
+            print(f"[olyrents] Fetching page with browser...")
             soup = self.fetch_page(self.base_url)
 
             print(f"[olyrents] Page title: {soup.title.string if soup.title else 'No title'}")

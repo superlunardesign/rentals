@@ -5,4 +5,7 @@ set -e
 echo "=== Installing Python dependencies ==="
 pip install -r requirements.txt
 
+echo "=== Installing Playwright Chromium with dependencies ==="
+playwright install chromium --with-deps
+
 echo "=== Build complete! ==="
