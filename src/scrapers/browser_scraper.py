@@ -46,14 +46,20 @@ class BrowserScraper(BaseScraper):
         """Lazy-load Playwright browser asynchronously."""
         if self._browser is None:
             try:
+                print(f"[{self.source_name}] Importing Playwright...")
                 from playwright.async_api import async_playwright
+                print(f"[{self.source_name}] Starting Playwright...")
                 self._playwright = await async_playwright().start()
+                print(f"[{self.source_name}] Launching Chromium...")
                 self._browser = await self._playwright.chromium.launch(
                     headless=True,
                     args=['--no-sandbox', '--disable-dev-shm-usage']
                 )
+                print(f"[{self.source_name}] Browser launched successfully!")
             except Exception as e:
                 print(f"[{self.source_name}] Failed to start browser: {e}")
+                import traceback
+                traceback.print_exc()
                 raise
         return self._browser
 

@@ -52,7 +52,9 @@ class ScraperService:
             print(f"\n[scraper] Running {source.name}...")
 
             try:
+                print(f"[scraper] Initializing {source.scraper} scraper...")
                 with scraper_class(source.url) as scraper:
+                    print(f"[scraper] Scraper initialized, starting scrape...")
                     listings = scraper.scrape()
 
                     # Pass scraper to process_listings so it can fetch detail pages
@@ -79,6 +81,8 @@ class ScraperService:
             except Exception as e:
                 error_msg = f"Error with {source.name}: {str(e)}"
                 print(f"[scraper] {error_msg}")
+                import traceback
+                traceback.print_exc()
                 results["errors"].append(error_msg)
 
         # Now remove stale listings for each source_name
