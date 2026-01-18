@@ -1,28 +1,27 @@
-"""Scraper for Team NW Property Management (teamnwpm.com).
-
-Uses Playwright browser to bypass bot protection.
-"""
+"""Scraper for Team NW Property Management (teamnwpm.com)."""
 
 import re
 from typing import Optional
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
-from .browser_scraper import BrowserScraper, ScrapedListing
+from .base import BaseScraper, ScrapedListing
 
 
-class TeamNWPMScraper(BrowserScraper):
-    """Scraper for teamnwpm.com property listings using browser."""
+class TeamNWPMScraper(BaseScraper):
+    """Scraper for teamnwpm.com property listings."""
 
     def __init__(self, url: str = "https://teamnwpm.com/available-homes/"):
         super().__init__(source_name="teamnwpm", base_url=url)
+        # Add referer header to look like we came from their site
+        self.client.headers["Referer"] = "https://teamnwpm.com/"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all listings from teamnwpm.com."""
         listings = []
 
         try:
-            print(f"[teamnwpm] Fetching page with browser...")
+            print(f"[teamnwpm] Fetching page...")
             soup = self.fetch_page(self.base_url)
 
             print(f"[teamnwpm] Page title: {soup.title.string if soup.title else 'No title'}")
@@ -40,21 +39,19 @@ class TeamNWPMScraper(BrowserScraper):
 
         except Exception as e:
             print(f"[teamnwpm] Error scraping: {e}")
-            import traceback
-            traceback.print_exc()
+            # Don't crash - just return empty list
+            if "403" in str(e):
+                print("[teamnwpm] Site is blocking requests (403 Forbidden)")
 
         return listings
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
         """Find all listing elements on the page."""
-        candidates = []
-
         # Try common property listing selectors
         selectors = [
             ".property-card", ".listing-card", ".home-card",
             ".property-item", ".listing-item", ".home-item",
             "[class*='property']", "[class*='listing']",
-            "main > div > div",
             "article",
         ]
 
@@ -67,6 +64,7 @@ class TeamNWPMScraper(BrowserScraper):
 
         # Fallback: find divs with dl/dd (description list for specs)
         dl_elements = soup.find_all("dl")
+        candidates = []
         for dl in dl_elements:
             parent = dl.find_parent("div")
             if parent:
@@ -76,12 +74,7 @@ class TeamNWPMScraper(BrowserScraper):
 
         if candidates:
             seen = set()
-            unique = []
-            for c in candidates:
-                c_id = id(c)
-                if c_id not in seen:
-                    seen.add(c_id)
-                    unique.append(c)
+            unique = [c for c in candidates if not (id(c) in seen or seen.add(id(c)))]
             print(f"[teamnwpm] Found {len(unique)} via dl/dd pattern")
             return unique
 
@@ -143,9 +136,7 @@ class TeamNWPMScraper(BrowserScraper):
                 detail_url = self.base_url
 
             # Extract rent
-            rent = self._extract_rent_from_dl(element)
-            if not rent:
-                rent = self._extract_rent(element)
+            rent = self._extract_rent(element)
 
             # Extract specs
             bedrooms, bathrooms, sqft = self._extract_specs(element)
@@ -160,9 +151,6 @@ class TeamNWPMScraper(BrowserScraper):
             # Generate source ID
             source_id = self._extract_source_id(detail_url, element)
 
-            # Extract description
-            description = self._extract_description(element)
-
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
@@ -176,25 +164,12 @@ class TeamNWPMScraper(BrowserScraper):
                 bedrooms=bedrooms,
                 bathrooms=bathrooms,
                 sqft=sqft,
-                description=description,
                 image_url=image_url,
             )
 
         except Exception as e:
             print(f"[teamnwpm] Error parsing listing: {e}")
             return None
-
-    def _extract_rent_from_dl(self, element: Tag) -> Optional[int]:
-        """Extract rent from dl/dd description list."""
-        dls = element.find_all("dl")
-        for dl in dls:
-            dds = dl.find_all("dd")
-            for dd in dds:
-                text = dd.get_text()
-                rent = self.parse_rent(text)
-                if rent and 500 <= rent <= 10000:
-                    return rent
-        return None
 
     def _extract_rent(self, element: Tag) -> Optional[int]:
         """Extract rent amount."""
@@ -250,17 +225,14 @@ class TeamNWPMScraper(BrowserScraper):
         bathrooms = None
         sqft = None
 
-        # Bedrooms
         bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text)
         if bed_match:
             bedrooms = int(bed_match.group(1))
 
-        # Bathrooms
         bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text)
         if bath_match:
             bathrooms = float(bath_match.group(1))
 
-        # Square footage
         sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', text)
         if sqft_match:
             sqft = int(sqft_match.group(1).replace(',', ''))
@@ -293,60 +265,3 @@ class TeamNWPMScraper(BrowserScraper):
             state = cs_match.group(2).upper() if cs_match.group(2) else "WA"
 
         return address, city, state, zip_code
-
-    def _extract_description(self, element: Tag) -> Optional[str]:
-        """Extract listing description."""
-        for selector in [".description", ".property-description", ".excerpt", ".summary", "p"]:
-            desc_elem = element.select_one(selector)
-            if desc_elem:
-                desc = self.clean_text(desc_elem.get_text())
-                if len(desc) > 30:
-                    return desc[:500]
-        return None
-
-    def scrape_detail_page(self, url: str) -> dict:
-        """Scrape additional details from individual listing page."""
-        details = {
-            "bedrooms": None,
-            "bathrooms": None,
-            "sqft": None,
-            "description": None,
-            "features": [],
-        }
-
-        try:
-            soup = self.fetch_page(url)
-            text = soup.get_text()
-            text_lower = text.lower()
-
-            # Extract specs
-            bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text_lower)
-            if bed_match:
-                details["bedrooms"] = int(bed_match.group(1))
-
-            bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text_lower)
-            if bath_match:
-                details["bathrooms"] = float(bath_match.group(1))
-
-            sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf|square feet)', text_lower)
-            if sqft_match:
-                details["sqft"] = int(sqft_match.group(1).replace(',', ''))
-
-            # Description
-            for selector in [".description", ".property-description", "[class*='description']", ".content", "p"]:
-                elems = soup.select(selector)
-                for elem in elems:
-                    desc = self.clean_text(elem.get_text())
-                    if len(desc) > 50:
-                        details["description"] = desc[:1000]
-                        break
-                if details["description"]:
-                    break
-
-            # Keywords
-            details["features"] = self.extract_keywords(text)
-
-        except Exception as e:
-            print(f"[teamnwpm] Error scraping detail page {url}: {e}")
-
-        return details

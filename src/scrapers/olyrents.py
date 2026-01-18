@@ -1,28 +1,27 @@
-"""Scraper for Olympic Landlord & Rental Services (olyrents.com).
-
-Uses Playwright browser to bypass bot protection.
-"""
+"""Scraper for Olympic Landlord & Rental Services (olyrents.com)."""
 
 import re
 from typing import Optional
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
-from .browser_scraper import BrowserScraper, ScrapedListing
+from .base import BaseScraper, ScrapedListing
 
 
-class OlyrentsScraper(BrowserScraper):
-    """Scraper for olyrents.com property listings using browser."""
+class OlyrentsScraper(BaseScraper):
+    """Scraper for olyrents.com property listings."""
 
     def __init__(self, url: str = "https://olyrents.com/properties/olympia/"):
         super().__init__(source_name="olyrents", base_url=url)
+        # Add referer header to look like we came from their site
+        self.client.headers["Referer"] = "https://olyrents.com/"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all listings from olyrents.com."""
         listings = []
 
         try:
-            print(f"[olyrents] Fetching page with browser...")
+            print(f"[olyrents] Fetching page...")
             soup = self.fetch_page(self.base_url)
 
             print(f"[olyrents] Page title: {soup.title.string if soup.title else 'No title'}")
