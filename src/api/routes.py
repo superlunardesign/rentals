@@ -169,6 +169,73 @@ async def run_scrape():
     return {"status": "ok", "results": results}
 
 
+@router.get("/scrape/debug/{scraper_name}")
+async def debug_scraper(scraper_name: str):
+    """Debug a specific scraper - returns detailed info about what's happening."""
+    import traceback
+    import io
+    import sys
+
+    from ..scrapers import OlyrentsScraper, TeamNWPMScraper, AMHScraper
+
+    scrapers = {
+        "olyrents": OlyrentsScraper,
+        "teamnwpm": TeamNWPMScraper,
+        "amh": AMHScraper,
+    }
+
+    if scraper_name not in scrapers:
+        return {"error": f"Unknown scraper: {scraper_name}. Available: {list(scrapers.keys())}"}
+
+    # Capture stdout
+    old_stdout = sys.stdout
+    sys.stdout = captured = io.StringIO()
+
+    result = {
+        "scraper": scraper_name,
+        "success": False,
+        "listings_found": 0,
+        "listings": [],
+        "logs": "",
+        "error": None,
+    }
+
+    try:
+        scraper_class = scrapers[scraper_name]
+        print(f"[debug] Starting {scraper_name} scraper...")
+
+        with scraper_class() as scraper:
+            print(f"[debug] Fetching URL: {scraper.base_url}")
+            listings = scraper.scrape()
+
+            result["success"] = True
+            result["listings_found"] = len(listings)
+            result["listings"] = [
+                {
+                    "title": l.title[:50] if l.title else None,
+                    "url": l.url,
+                    "rent": l.rent,
+                    "bedrooms": l.bedrooms,
+                    "bathrooms": l.bathrooms,
+                    "sqft": l.sqft,
+                    "image_url": l.image_url[:100] if l.image_url else None,
+                }
+                for l in listings[:10]  # Limit to first 10 for debug
+            ]
+
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {str(e)}"
+        result["traceback"] = traceback.format_exc()
+        print(f"[debug] ERROR: {e}")
+        traceback.print_exc()
+
+    finally:
+        sys.stdout = old_stdout
+        result["logs"] = captured.getvalue()
+
+    return result
+
+
 @router.post("/listings/rematch")
 async def rematch_all_listings(db: Session = Depends(get_db)):
     """Re-run matching on all listings with current criteria."""
