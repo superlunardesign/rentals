@@ -33,6 +33,23 @@ def create_app() -> FastAPI:
     # Include routes
     application.include_router(router)
 
+    # Run scrape on startup (works with uvicorn main:app on Render)
+    @application.on_event("startup")
+    async def startup_event():
+        config = get_config()
+        if config.scheduler.run_on_startup:
+            print("[startup] Running initial scrape in background...")
+            import threading
+            def run_scrape():
+                try:
+                    service = ScraperService()
+                    results = service.run_all_scrapers()
+                    print(f"[startup] Initial scrape complete: {results['total_found']} listings found")
+                except Exception as e:
+                    print(f"[startup] Error in initial scrape: {e}")
+            thread = threading.Thread(target=run_scrape, daemon=True)
+            thread.start()
+
     return application
 
 
