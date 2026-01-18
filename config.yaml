@@ -59,7 +59,7 @@ sources:
 
   - name: "Team NW Property Management"
     scraper: "teamnwpm"
-    url: "https://teamnwpm.com/available-homes/"
+    url: "https://capitalproperties.appfolio.com/listings"
     enabled: true
 
   - name: "AMH Tumwater"
