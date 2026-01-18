@@ -14,6 +14,11 @@ from .base import BaseScraper, ScrapedListing
 class TeamNWPMScraper(BaseScraper):
     """Scraper for teamnwpm.com property listings via AppFolio."""
 
+    # Dummy/application-only listings to ignore
+    IGNORED_LISTING_IDS = {
+        "82deebd6-0948-44c8-b008-d298ec21af34",  # Application link placeholder
+    }
+
     def __init__(self, url: str = "https://capitalproperties.appfolio.com/listings"):
         super().__init__(source_name="teamnwpm", base_url=url)
         # Add referer header
@@ -35,6 +40,10 @@ class TeamNWPMScraper(BaseScraper):
             for element in listing_elements:
                 listing = self._parse_listing(element)
                 if listing:
+                    # Check if this listing should be ignored
+                    if any(ignored_id in listing.url for ignored_id in self.IGNORED_LISTING_IDS):
+                        print(f"[teamnwpm] Skipping ignored listing: {listing.url}")
+                        continue
                     listings.append(listing)
                     print(f"[teamnwpm] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
 
