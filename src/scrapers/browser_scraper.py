@@ -1,6 +1,10 @@
-"""Browser-based scraper using Playwright for sites with bot protection."""
+"""Browser-based scraper using Playwright for sites with bot protection.
+
+Uses async Playwright API for compatibility with FastAPI.
+"""
 
 import re
+import asyncio
 from typing import Optional
 from bs4 import BeautifulSoup
 
@@ -16,14 +20,30 @@ class BrowserScraper(BaseScraper):
         self.base_url = base_url
         self._browser = None
         self._page = None
+        self._playwright = None
 
-    def _get_browser(self):
-        """Lazy-load Playwright browser."""
+    def _run_async(self, coro):
+        """Run an async coroutine from sync code."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're inside an async context (FastAPI), create a new thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, coro)
+                    return future.result()
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    async def _get_browser_async(self):
+        """Lazy-load Playwright browser asynchronously."""
         if self._browser is None:
             try:
-                from playwright.sync_api import sync_playwright
-                self._playwright = sync_playwright().start()
-                self._browser = self._playwright.chromium.launch(
+                from playwright.async_api import async_playwright
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(
                     headless=True,
                     args=['--no-sandbox', '--disable-dev-shm-usage']
                 )
@@ -32,36 +52,43 @@ class BrowserScraper(BaseScraper):
                 raise
         return self._browser
 
+    async def _fetch_page_async(self, url: str) -> str:
+        """Fetch a page using Playwright browser asynchronously."""
+        browser = await self._get_browser_async()
+
+        page = await browser.new_page()
+        try:
+            # Set realistic viewport
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            # Wait for dynamic content
+            await page.wait_for_timeout(2000)
+            html = await page.content()
+            return html
+        finally:
+            await page.close()
+
     def fetch_page(self, url: str) -> BeautifulSoup:
         """Fetch a page using Playwright browser."""
-        browser = self._get_browser()
+        html = self._run_async(self._fetch_page_async(url))
+        return BeautifulSoup(html, "lxml")
 
-        if self._page is None:
-            self._page = browser.new_page()
-            # Set realistic viewport and user agent
-            self._page.set_viewport_size({"width": 1920, "height": 1080})
-
-        try:
-            self._page.goto(url, wait_until="networkidle", timeout=30000)
-            # Wait a bit for any dynamic content
-            self._page.wait_for_timeout(2000)
-            html = self._page.content()
-            return BeautifulSoup(html, "lxml")
-        except Exception as e:
-            print(f"[{self.source_name}] Error fetching {url}: {e}")
-            raise
+    async def _close_async(self):
+        """Close browser asynchronously."""
+        if self._browser:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
 
     def close(self):
         """Close the browser."""
-        if self._page:
-            self._page.close()
-            self._page = None
-        if self._browser:
-            self._browser.close()
-            self._browser = None
-        if hasattr(self, '_playwright') and self._playwright:
-            self._playwright.stop()
-            self._playwright = None
+        try:
+            self._run_async(self._close_async())
+        except Exception as e:
+            print(f"[{self.source_name}] Error closing browser: {e}")
 
     def __enter__(self):
         return self
