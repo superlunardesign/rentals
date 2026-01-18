@@ -260,6 +260,10 @@ class MatchingService:
         if budget_status == "over":
             return MatchTier.EXCLUDED
 
+        # Excluded: too small (below minimum sqft)
+        if rooms_status.get("sqft") is not None and rooms_status["sqft"] < self.config.rooms.min_sqft:
+            return MatchTier.EXCLUDED
+
         # BEST MATCH: Perfect listing
         # Must be within budget, meet best match room criteria, and have keywords
         if budget_status == "within":
