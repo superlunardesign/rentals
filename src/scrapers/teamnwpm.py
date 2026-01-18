@@ -47,20 +47,33 @@ class TeamNWPMScraper(BaseScraper):
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
         """Find all listing elements on the page."""
-        # Try common property listing selectors
+        # Houzez theme (WordPress) specific selectors first
         selectors = [
+            ".item-wrap",  # Houzez main listing wrapper
+            ".property-item",  # Houzez property item
+            ".houzez-property-card",  # Houzez card
+            ".property-box",  # Another Houzez variant
+            ".listing-item",
             ".property-card", ".listing-card", ".home-card",
-            ".property-item", ".listing-item", ".home-item",
-            "[class*='property']", "[class*='listing']",
-            "article",
+            ".property-item", ".home-item",
+            "article.property",
+            "[class*='property-item']",
+            "[class*='item-wrap']",
         ]
 
         for selector in selectors:
             elements = soup.select(selector)
-            property_elements = [e for e in elements if self._looks_like_property(e)]
-            if property_elements:
-                print(f"[teamnwpm] Using selector: {selector} ({len(property_elements)} matches)")
-                return property_elements
+            if elements:
+                # For Houzez, don't filter too strictly - trust the selector
+                print(f"[teamnwpm] Using selector: {selector} ({len(elements)} matches)")
+                # Filter to only those that look like properties
+                property_elements = [e for e in elements if self._looks_like_property(e)]
+                if property_elements:
+                    return property_elements
+                # If none pass the filter, return all (Houzez structure might be different)
+                if len(elements) <= 30:
+                    print(f"[teamnwpm] Returning all {len(elements)} elements (filter too strict)")
+                    return elements
 
         # Fallback: find divs with dl/dd (description list for specs)
         dl_elements = soup.find_all("dl")
@@ -97,6 +110,11 @@ class TeamNWPMScraper(BaseScraper):
 
     def _looks_like_property(self, element: Tag) -> bool:
         """Check if an element looks like a property listing."""
+        # Check for Houzez-specific classes first
+        classes = " ".join(element.get("class", []))
+        if any(x in classes for x in ["item-wrap", "property-item", "houzez", "property-box"]):
+            return True
+
         text = element.get_text().lower()
 
         has_price = bool(re.search(r'\$[\d,]+', text))
