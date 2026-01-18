@@ -214,7 +214,10 @@ class MatchingService:
                 result["score"] += 3
                 result["reasons"].append(f"{listing.sqft:,} sqft")
             else:
-                result["reasons"].append(f"Only {listing.sqft:,} sqft")
+                # Penalize listings below minimum sqft
+                result["score"] -= 15
+                result["reasons"].append(f"Too small: {listing.sqft:,} sqft (need {self.config.rooms.min_sqft}+)")
+                result["meets_minimum"] = False
 
         # Check if meets best match criteria
         beds_ok = listing.bedrooms is not None and listing.bedrooms >= best_beds

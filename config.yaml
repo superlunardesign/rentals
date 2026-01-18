@@ -18,7 +18,7 @@ budget:
 rooms:
   min_bedrooms: 2  # Minimum bedrooms required
   min_bathrooms: 1
-  min_sqft: 800  # Minimum square footage
+  min_sqft: 1200  # Minimum square footage
 
   # Best match criteria (must meet ALL for best match tier)
   best_match_bedrooms: 3

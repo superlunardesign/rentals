@@ -3,12 +3,17 @@
 Uses async Playwright API for compatibility with FastAPI.
 """
 
+import os
 import re
 import asyncio
 from typing import Optional
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper, ScrapedListing
+
+# Set Playwright browsers path for Render deployment
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/render/.cache/ms-playwright"
 
 
 class BrowserScraper(BaseScraper):
