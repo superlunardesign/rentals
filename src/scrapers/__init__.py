@@ -4,6 +4,8 @@ from .teamnwpm import TeamNWPMScraper
 from .amh import AMHScraper
 from .hometownpm import HometownPMScraper
 from .tjguyer import TJGuyerScraper
+from .kenzie import KenzieScraper
+from .greene import GreeneScraper
 
 SCRAPERS = {
     "olyrents": OlyrentsScraper,
@@ -11,6 +13,8 @@ SCRAPERS = {
     "amh": AMHScraper,
     "hometownpm": HometownPMScraper,
     "tjguyer": TJGuyerScraper,
+    "kenzie": KenzieScraper,
+    "greene": GreeneScraper,
 }
 
 __all__ = [
@@ -21,5 +25,7 @@ __all__ = [
     "AMHScraper",
     "HometownPMScraper",
     "TJGuyerScraper",
+    "KenzieScraper",
+    "GreeneScraper",
     "SCRAPERS",
 ]

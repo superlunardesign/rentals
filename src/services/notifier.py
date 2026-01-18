@@ -1,0 +1,207 @@
+"""Notification service for alerting about new matching listings."""
+
+import os
+from typing import Optional
+
+import httpx
+
+from ..config import get_config
+from ..models.listing import Listing
+
+
+class TelegramNotifier:
+    """Send notifications via Telegram bot."""
+
+    def __init__(self):
+        config = get_config()
+        notif_config = getattr(config, 'notifications', None)
+        telegram_config = getattr(notif_config, 'telegram', None) if notif_config else None
+
+        # Get credentials from config or environment
+        self.bot_token = (
+            os.environ.get("TELEGRAM_BOT_TOKEN") or
+            (telegram_config.bot_token if telegram_config else None)
+        )
+        self.chat_id = (
+            os.environ.get("TELEGRAM_CHAT_ID") or
+            (telegram_config.chat_id if telegram_config else None)
+        )
+        self.enabled = (
+            telegram_config.enabled if telegram_config else False
+        ) and self.bot_token and self.chat_id
+
+        # Which tiers to notify about
+        self.notify_tiers = (
+            telegram_config.notify_tiers if telegram_config else ["BEST_MATCH", "MATCH"]
+        )
+
+        if self.enabled:
+            print(f"[telegram] Notifications enabled for tiers: {self.notify_tiers}")
+        else:
+            if not self.bot_token:
+                print("[telegram] Disabled - no bot token configured")
+            elif not self.chat_id:
+                print("[telegram] Disabled - no chat_id configured")
+
+    def should_notify(self, listing: Listing) -> bool:
+        """Check if we should send notification for this listing."""
+        if not self.enabled:
+            return False
+
+        # Check if listing tier is in notify_tiers
+        tier = listing.match_tier or "EXCLUDED"
+        return tier in self.notify_tiers
+
+    def notify_new_listing(self, listing: Listing) -> bool:
+        """Send notification about a new matching listing."""
+        if not self.should_notify(listing):
+            return False
+
+        try:
+            message = self._format_listing_message(listing)
+            return self._send_message(message)
+        except Exception as e:
+            print(f"[telegram] Error sending notification: {e}")
+            return False
+
+    def notify_multiple_listings(self, listings: list[Listing]) -> int:
+        """Send notifications for multiple new listings. Returns count sent."""
+        sent = 0
+        for listing in listings:
+            if self.notify_new_listing(listing):
+                sent += 1
+        return sent
+
+    def _format_listing_message(self, listing: Listing) -> str:
+        """Format a listing into a Telegram message."""
+        # Emoji based on tier
+        tier_emoji = {
+            "BEST_MATCH": "🌟",
+            "MATCH": "✅",
+            "FLEXIBLE": "🔶",
+        }.get(listing.match_tier, "📋")
+
+        # Build message parts
+        lines = [
+            f"{tier_emoji} *New {listing.match_tier or 'Listing'}*",
+            "",
+        ]
+
+        if listing.title:
+            lines.append(f"📍 {self._escape_markdown(listing.title)}")
+
+        if listing.rent:
+            lines.append(f"💰 ${listing.rent:,}/mo")
+
+        specs = []
+        if listing.bedrooms is not None:
+            specs.append(f"{listing.bedrooms} bed")
+        if listing.bathrooms is not None:
+            specs.append(f"{listing.bathrooms} bath")
+        if listing.sqft:
+            specs.append(f"{listing.sqft:,} sqft")
+        if specs:
+            lines.append(f"🏠 {' • '.join(specs)}")
+
+        if listing.match_score:
+            lines.append(f"📊 Match: {listing.match_score}%")
+
+        if listing.matched_keywords:
+            keywords = listing.matched_keywords.split(",")[:3]  # Top 3
+            lines.append(f"🏷️ {', '.join(keywords)}")
+
+        lines.append("")
+        lines.append(f"[View Listing]({listing.url})")
+
+        return "\n".join(lines)
+
+    def _escape_markdown(self, text: str) -> str:
+        """Escape special markdown characters for Telegram."""
+        if not text:
+            return ""
+        # Escape these chars: _ * [ ] ( ) ~ ` > # + - = | { } . !
+        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        for char in special_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+
+    def _send_message(self, message: str) -> bool:
+        """Send a message via Telegram API."""
+        if not self.bot_token or not self.chat_id:
+            return False
+
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+        try:
+            with httpx.Client(timeout=10) as client:
+                response = client.post(url, json={
+                    "chat_id": self.chat_id,
+                    "text": message,
+                    "parse_mode": "MarkdownV2",
+                    "disable_web_page_preview": False,
+                })
+
+                if response.status_code == 200:
+                    print(f"[telegram] Notification sent successfully")
+                    return True
+                else:
+                    print(f"[telegram] API error: {response.status_code} - {response.text}")
+                    # Try again without markdown if parsing failed
+                    if "can't parse" in response.text.lower():
+                        return self._send_plain_message(message)
+                    return False
+
+        except Exception as e:
+            print(f"[telegram] Request error: {e}")
+            return False
+
+    def _send_plain_message(self, message: str) -> bool:
+        """Fallback: send without markdown parsing."""
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+        # Strip markdown
+        plain = message.replace('*', '').replace('_', '').replace('\\', '')
+
+        try:
+            with httpx.Client(timeout=10) as client:
+                response = client.post(url, json={
+                    "chat_id": self.chat_id,
+                    "text": plain,
+                })
+                return response.status_code == 200
+        except:
+            return False
+
+    def send_test_message(self) -> bool:
+        """Send a test message to verify configuration."""
+        if not self.enabled:
+            print("[telegram] Cannot send test - notifications not enabled")
+            return False
+
+        message = "🔔 *Rental Tracker Test*\n\nTelegram notifications are working\\!"
+        return self._send_message(message)
+
+
+class NotificationService:
+    """Main notification service that coordinates all notification channels."""
+
+    def __init__(self):
+        self.telegram = TelegramNotifier()
+
+    def notify_new_listings(self, listings: list[Listing]) -> dict:
+        """Send notifications for new listings that match criteria."""
+        results = {
+            "telegram_sent": 0,
+            "telegram_enabled": self.telegram.enabled,
+        }
+
+        if self.telegram.enabled:
+            results["telegram_sent"] = self.telegram.notify_multiple_listings(listings)
+
+        return results
+
+    def send_test(self) -> dict:
+        """Send test notifications to verify all channels work."""
+        return {
+            "telegram": self.telegram.send_test_message() if self.telegram.enabled else None,
+        }

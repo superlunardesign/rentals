@@ -12,6 +12,7 @@ from ..scrapers import SCRAPERS
 from ..scrapers.base import ScrapedListing
 from .matcher import MatchingService
 from .geocoder import GeocodingService
+from .notifier import NotificationService
 
 
 class ScraperService:
@@ -21,6 +22,7 @@ class ScraperService:
         self.config = get_config()
         self.matcher = MatchingService()
         self.geocoder = GeocodingService()
+        self.notifier = NotificationService()
 
     def run_all_scrapers(self) -> dict:
         """
@@ -33,12 +35,15 @@ class ScraperService:
             "new_listings": 0,
             "updated_listings": 0,
             "removed_listings": 0,
+            "notifications_sent": 0,
             "errors": [],
             "by_source": {},
         }
 
         # Track all found source_ids per source_name (for scrapers used by multiple sources)
         all_found_ids_by_source: dict[str, set] = {}
+        # Track new listings for notifications
+        new_listings_for_notification: list[Listing] = []
 
         for source in self.config.sources:
             if not source.enabled:
@@ -78,6 +83,9 @@ class ScraperService:
                 results["updated_listings"] += source_results["updated"]
                 results["by_source"][source.name] = source_results
 
+                # Collect new listings for notifications
+                new_listings_for_notification.extend(source_results.get("new_listing_objects", []))
+
             except Exception as e:
                 error_msg = f"Error with {source.name}: {str(e)}"
                 print(f"[scraper] {error_msg}")
@@ -89,9 +97,16 @@ class ScraperService:
         removed = self._remove_stale_listings(all_found_ids_by_source)
         results["removed_listings"] = removed
 
+        # Send notifications for new matching listings
+        if new_listings_for_notification:
+            notif_results = self.notifier.notify_new_listings(new_listings_for_notification)
+            results["notifications_sent"] = notif_results.get("telegram_sent", 0)
+            if results["notifications_sent"] > 0:
+                print(f"[scraper] Sent {results['notifications_sent']} notifications")
+
         print(f"\n[scraper] Complete: {results['total_found']} found, "
               f"{results['new_listings']} new, {results['updated_listings']} updated, "
-              f"{results['removed_listings']} removed")
+              f"{results['removed_listings']} removed, {results['notifications_sent']} notifications")
 
         return results
 
@@ -124,7 +139,7 @@ class ScraperService:
 
         If scraper is provided and listing is missing key data, will fetch detail page.
         """
-        results = {"found": len(scraped_listings), "new": 0, "updated": 0, "found_ids": set()}
+        results = {"found": len(scraped_listings), "new": 0, "updated": 0, "found_ids": set(), "new_listing_objects": []}
 
         with SessionLocal() as session:
             for scraped in scraped_listings:
@@ -171,8 +186,14 @@ class ScraperService:
                     listing = self._create_listing(scraped)
                     session.add(listing)
                     results["new"] += 1
+                    # Track for notifications (will be sent after commit)
+                    results["new_listing_objects"].append(listing)
 
             session.commit()
+
+            # Refresh listing objects to get IDs after commit
+            for listing in results["new_listing_objects"]:
+                session.refresh(listing)
 
         return results
 
