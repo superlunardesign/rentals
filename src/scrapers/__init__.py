@@ -1,4 +1,4 @@
-from .base import BaseScraper
+from .base import BaseScraper, ScrapedListing
 from .olyrents import OlyrentsScraper
 from .teamnwpm import TeamNWPMScraper
 from .amh import AMHScraper
@@ -9,4 +9,11 @@ SCRAPERS = {
     "amh": AMHScraper,
 }
 
-__all__ = ["BaseScraper", "SCRAPERS"]
+__all__ = [
+    "BaseScraper",
+    "ScrapedListing",
+    "OlyrentsScraper",
+    "TeamNWPMScraper",
+    "AMHScraper",
+    "SCRAPERS",
+]
