@@ -77,6 +77,11 @@ sources:
     url: "https://www.hometownpm.com/"
     enabled: true
 
+  - name: "TJ Guyer Property Management"
+    scraper: "tjguyer"
+    url: "https://tjguyer.appfolio.com/listings"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1
