@@ -65,6 +65,7 @@ class OlyrentsScraper(BaseScraper):
                 return property_elements
 
         # Fallback: find divs with property-like content
+        candidates = []
         all_divs = soup.find_all("div")
         for div in all_divs:
             if len(div.get_text()) < 50:
