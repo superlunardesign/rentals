@@ -1,36 +1,25 @@
-"""Scraper for Hometown Property Management (hometownpm.com).
+"""Scraper for Hometown Property Management.
 
-Uses AppFolio data displayed on their main website.
+Uses AppFolio listings at hometownpropmgmt.appfolio.com.
 """
 
 import re
 from typing import Optional
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup, Tag
+from bs4 import Tag
 
 from .base import BaseScraper, ScrapedListing
 
 
 class HometownPMScraper(BaseScraper):
-    """Scraper for hometownpm.com property listings."""
+    """Scraper for Hometown Property Management via AppFolio."""
 
-    def __init__(self, url: str = "https://www.hometownpm.com/"):
+    def __init__(self, url: str = "https://hometownpropmgmt.appfolio.com/listings"):
         super().__init__(source_name="hometownpm", base_url=url)
-        # Try to look like a real browser
-        self.client.headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Referer": "https://www.google.com/",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "cross-site",
-        })
+        self.client.headers["Referer"] = "https://www.hometownpm.com/"
 
     def scrape(self) -> list[ScrapedListing]:
-        """Scrape all WA listings from hometownpm.com."""
+        """Scrape all listings from hometownpropmgmt.appfolio.com."""
         listings = []
 
         try:
@@ -39,19 +28,22 @@ class HometownPMScraper(BaseScraper):
 
             print(f"[hometownpm] Page title: {soup.title.string if soup.title else 'No title'}")
 
-            # Find all listing articles
-            listing_articles = soup.select("article")
-            print(f"[hometownpm] Found {len(listing_articles)} article elements")
+            # AppFolio listings have IDs like "listing_521"
+            listing_elements = soup.select("[id^='listing_']")
+            if not listing_elements:
+                listing_elements = soup.select(".listing-item")
 
-            for article in listing_articles:
-                listing = self._parse_listing(article)
+            print(f"[hometownpm] Found {len(listing_elements)} listing elements")
+
+            for element in listing_elements:
+                listing = self._parse_listing(element)
                 if listing:
                     # Only include WA listings
                     if listing.state == "WA":
                         listings.append(listing)
-                        print(f"[hometownpm] Parsed: {listing.address[:40]}... - ${listing.rent or 'N/A'}")
+                        print(f"[hometownpm] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
                     else:
-                        print(f"[hometownpm] Skipping non-WA: {listing.address}")
+                        print(f"[hometownpm] Skipping non-WA: {listing.address} ({listing.state})")
 
             print(f"[hometownpm] Found {len(listings)} WA listings")
 
@@ -62,108 +54,123 @@ class HometownPMScraper(BaseScraper):
 
         return listings
 
-    def _parse_listing(self, article: Tag) -> Optional[ScrapedListing]:
-        """Parse a single listing article element."""
+    def _parse_listing(self, element: Tag) -> Optional[ScrapedListing]:
+        """Parse a single AppFolio listing element."""
         try:
             image_url = None
             detail_url = None
-            address_line1 = None
-            address_line2 = None
+
+            # AppFolio structure: image is in .listing-item__image class
+            img = element.select_one(".listing-item__image img")
+            if not img:
+                img = element.select_one("a img")
+            if not img:
+                img = element.find("img")
+            if img:
+                image_url = (
+                    img.get("src") or
+                    img.get("data-src") or
+                    img.get("data-lazy-src")
+                )
+                if image_url and not image_url.startswith("http"):
+                    image_url = urljoin(self.base_url, image_url)
+
+            # Find link to detail page
+            link = element.select_one("a[href]")
+            if link:
+                detail_url = urljoin(self.base_url, link.get("href", ""))
+            else:
+                detail_url = self.base_url
+
+            # AppFolio uses dl/dd for specs
+            dd_elements = element.select("dl dd")
             rent = None
+            sqft = None
             bedrooms = None
             bathrooms = None
-            sqft = None
-            description = None
 
-            # Extract image from img tag
-            img = article.select_one("img")
-            if img:
-                image_url = img.get("src")
-                if image_url:
-                    print(f"[hometownpm] Found image: {image_url[:60]}...")
-
-            # Extract detail URL from first link
-            detail_link = article.select_one("a[href*='/listings/detail/']")
-            if detail_link:
-                detail_url = urljoin(self.base_url, detail_link.get("href", ""))
-
-            # Extract address from the overlay div
-            # Structure: div.text-lg.font-bold > div (address line 1) + div (city, state zip)
-            address_div = article.select_one(".drop-shadow")
-            if address_div:
-                divs = address_div.find_all("div", recursive=False)
-                if len(divs) >= 2:
-                    address_line1 = self.clean_text(divs[0].get_text())
-                    address_line2 = self.clean_text(divs[1].get_text())
-
-            # Extract rent - look for the bold price
-            rent_elem = article.select_one(".text-2xl.font-bold")
-            if rent_elem:
-                rent_text = rent_elem.get_text()
-                rent = self.parse_rent(rent_text)
-
-            # Extract specs - beds, baths, sqft from the icon sections
-            spec_divs = article.select(".leading-5.text-center")
-            for spec_div in spec_divs:
-                text = spec_div.get_text().lower().strip()
-
-                if "bed" in text or "studio" in text:
-                    if "studio" in text:
-                        bedrooms = 0
-                    else:
-                        bed_match = re.search(r'(\d+)', text)
-                        if bed_match:
-                            bedrooms = int(bed_match.group(1))
-
-                elif "bath" in text:
-                    bath_match = re.search(r'([\d.]+)', text)
-                    if bath_match:
-                        bathrooms = float(bath_match.group(1))
-
-                elif "sqft" in text:
+            for dd in dd_elements:
+                text = dd.get_text().strip()
+                if "$" in text and not rent:
+                    rent = self.parse_rent(text)
+                elif "sq" in text.lower() or "ft" in text.lower():
                     sqft_match = re.search(r'([\d,]+)', text)
                     if sqft_match:
                         sqft = int(sqft_match.group(1).replace(',', ''))
+                elif re.search(r'\d+\s*(bed|br|bd)', text.lower()):
+                    bed_match = re.search(r'(\d+)', text)
+                    if bed_match:
+                        bedrooms = int(bed_match.group(1))
+                elif re.search(r'\d+\.?\d*\s*(bath|ba)', text.lower()):
+                    bath_match = re.search(r'(\d+\.?\d*)', text)
+                    if bath_match:
+                        bathrooms = float(bath_match.group(1))
 
-            # Extract description
-            desc_elem = article.select_one(".line-clamp-3")
-            if desc_elem:
-                description = self.clean_text(desc_elem.get_text())
+            # Fallback: try regex on all text
+            if not rent or not bedrooms:
+                all_text = element.get_text()
+                if not rent:
+                    rent = self.parse_rent(all_text)
+                if not bedrooms:
+                    bed_match = re.search(r'(\d+)\s*(?:bed|br)', all_text, re.I)
+                    if bed_match:
+                        bedrooms = int(bed_match.group(1))
+                if not bathrooms:
+                    bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba)', all_text, re.I)
+                    if bath_match:
+                        bathrooms = float(bath_match.group(1))
+                if not sqft:
+                    sqft_match = re.search(r'([\d,]+)\s*(?:sq|sf)', all_text, re.I)
+                    if sqft_match:
+                        sqft = int(sqft_match.group(1).replace(',', ''))
 
-            if not address_line1 and not address_line2:
-                return None
+            # Address from p > span (AppFolio pattern)
+            address = None
+            addr_elem = element.select_one("p span")
+            if addr_elem:
+                address = self.clean_text(addr_elem.get_text())
 
-            # Parse city/state/zip from address_line2 (e.g., "Lacey, WA 98516")
+            if not address:
+                text = element.get_text()
+                addr_match = re.search(r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd)[^,\n]*)', text, re.I)
+                if addr_match:
+                    address = self.clean_text(addr_match.group(1))
+
+            # Extract city/state/zip - Hometown covers WA and ID
             city = None
             state = None
             zip_code = None
+            if address:
+                zip_code = self.extract_zip_code(address)
+                # Check for WA cities
+                wa_city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Bucoda|Roy|Spanaway|Tacoma|Puyallup|Graham|Eatonville|Elma|McCleary|Montesano|Aberdeen|Hoquiam)', address, re.I)
+                if wa_city_match:
+                    city = wa_city_match.group(1).title()
+                    state = "WA"
+                # Check for ID cities
+                id_city_match = re.search(r'(Boise|Meridian|Nampa|Caldwell|Eagle|Kuna|Star|Middleton|Emmett|Mountain Home|Idaho Falls|Pocatello|Twin Falls)', address, re.I)
+                if id_city_match:
+                    city = id_city_match.group(1).title()
+                    state = "ID"
+                # Fallback: check for state abbreviation in address
+                if not state:
+                    state_match = re.search(r',\s*(WA|ID|Washington|Idaho)\s*\d{5}', address, re.I)
+                    if state_match:
+                        st = state_match.group(1).upper()
+                        state = "WA" if st in ("WA", "WASHINGTON") else "ID"
 
-            if address_line2:
-                # Pattern: City, ST ZIPCODE
-                match = re.match(r'([^,]+),\s*([A-Z]{2})\s*(\d{5})?', address_line2)
-                if match:
-                    city = match.group(1).strip()
-                    state = match.group(2)
-                    zip_code = match.group(3)
+            # Source ID from element ID
+            source_id = element.get("id", "")
+            if not source_id or not source_id.startswith("listing_"):
+                source_id = str(abs(hash(detail_url)))[:12]
 
-            # Full address
-            address = f"{address_line1}, {address_line2}" if address_line1 and address_line2 else (address_line1 or address_line2)
-
-            # Generate source ID from detail URL UUID
-            source_id = None
-            if detail_url:
-                uuid_match = re.search(r'/detail/([a-f0-9-]+)', detail_url)
-                if uuid_match:
-                    source_id = uuid_match.group(1)
-
-            if not source_id:
-                source_id = str(abs(hash(address or str(rent))))[:12]
+            title = address or f"Property {source_id}"
 
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=detail_url or self.base_url,
-                title=description or address or "Hometown PM Property",
+                url=detail_url,
+                title=title,
                 address=address,
                 city=city,
                 state=state,
@@ -172,18 +179,15 @@ class HometownPMScraper(BaseScraper):
                 bedrooms=bedrooms,
                 bathrooms=bathrooms,
                 sqft=sqft,
-                description=description,
                 image_url=image_url,
             )
 
         except Exception as e:
             print(f"[hometownpm] Error parsing listing: {e}")
-            import traceback
-            traceback.print_exc()
             return None
 
     def scrape_detail_page(self, url: str) -> dict:
-        """Scrape additional details from a listing detail page."""
+        """AppFolio detail pages have same info as listing cards."""
         return {
             "bedrooms": None,
             "bathrooms": None,

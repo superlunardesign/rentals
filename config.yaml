@@ -74,7 +74,7 @@ sources:
 
   - name: "Hometown Property Management"
     scraper: "hometownpm"
-    url: "https://www.hometownpm.com/"
+    url: "https://hometownpropmgmt.appfolio.com/listings"
     enabled: true
 
   - name: "TJ Guyer Property Management"
