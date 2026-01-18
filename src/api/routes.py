@@ -198,6 +198,8 @@ async def debug_scraper(scraper_name: str):
         "listings": [],
         "logs": "",
         "error": None,
+        "html_preview": None,
+        "http_status": None,
     }
 
     try:
@@ -206,6 +208,20 @@ async def debug_scraper(scraper_name: str):
 
         with scraper_class() as scraper:
             print(f"[debug] Fetching URL: {scraper.base_url}")
+
+            # First, get the raw HTML to see what we're dealing with
+            try:
+                response = scraper.client.get(scraper.base_url)
+                result["http_status"] = response.status_code
+                html = response.text
+                # Show first 1000 chars of HTML for debugging
+                result["html_preview"] = html[:1000] if html else "Empty response"
+                print(f"[debug] HTTP Status: {response.status_code}")
+                print(f"[debug] Response length: {len(html)} chars")
+            except Exception as e:
+                result["html_preview"] = f"Failed to fetch: {e}"
+                print(f"[debug] Fetch failed: {e}")
+
             listings = scraper.scrape()
 
             result["success"] = True

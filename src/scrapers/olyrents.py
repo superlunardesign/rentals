@@ -46,13 +46,13 @@ class OlyrentsScraper(BaseScraper):
 
     def _find_listing_elements(self, soup: BeautifulSoup) -> list[Tag]:
         """Find all listing elements on the page."""
-        candidates = []
-
-        # Try common selectors
+        # Try the exact selectors from the olyrents site structure
         selectors = [
+            ".list_item",  # Main listing container
+            ".card.card--flat",  # Card wrapper
+            ".card-property",  # Property card
             ".property-listing", ".property-item", ".property-card",
             ".listing-item", ".listing-card", ".rental-listing",
-            ".listing-item__inner", ".js-listing-item",
             "[class*='property']", "[class*='listing']",
             "article",
         ]
@@ -129,8 +129,9 @@ class OlyrentsScraper(BaseScraper):
             address = None
             rent = None
 
-            # Extract image
-            img = element.find("img")
+            # Extract image - try olyrents-specific .card-image first
+            img_container = element.select_one(".card-image")
+            img = img_container.find("img") if img_container else element.find("img")
             if img:
                 image_url = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
                 if image_url and not image_url.startswith("http"):
@@ -210,12 +211,25 @@ class OlyrentsScraper(BaseScraper):
 
     def _extract_address_text(self, element: Tag) -> Optional[str]:
         """Extract address from element text."""
-        for selector in [".address", ".property-address", ".location", "h2", "h3", ".title"]:
+        # Try olyrents-specific selectors first
+        for selector in [
+            ".card-property-address-top",
+            ".card-property-address-bottom",
+            ".card-property-address",
+            ".address", ".property-address", ".location", "h2", "h3", ".title"
+        ]:
             addr_elem = element.select_one(selector)
             if addr_elem:
                 text = self.clean_text(addr_elem.get_text())
                 if text and len(text) > 5:
                     return text
+
+        # Also try the title which often has address info
+        title_elem = element.select_one(".card-property-title")
+        if title_elem:
+            text = self.clean_text(title_elem.get_text())
+            if text and len(text) > 5:
+                return text
 
         text = element.get_text()
         addr_match = re.search(r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd)[^,\n]*)', text, re.I)
@@ -226,7 +240,8 @@ class OlyrentsScraper(BaseScraper):
 
     def _extract_rent(self, element: Tag) -> Optional[int]:
         """Extract rent amount."""
-        for selector in [".price", ".rent", "[class*='price']", "[class*='rent']", "span"]:
+        # Try olyrents-specific selector first
+        for selector in [".card-property-prices", ".price", ".rent", "[class*='price']", "[class*='rent']"]:
             price_elems = element.select(selector)
             for price_elem in price_elems:
                 rent = self.parse_rent(price_elem.get_text())
@@ -248,28 +263,41 @@ class OlyrentsScraper(BaseScraper):
         bathrooms = None
         sqft = None
 
+        # Try olyrents-specific selectors
+        details_elem = element.select_one(".card-property-details")
+        area_elem = element.select_one(".card-property-area")
+
+        # Get text from specific elements or fall back to full element text
+        details_text = details_elem.get_text().lower() if details_elem else ""
+        area_text = area_elem.get_text().lower() if area_elem else ""
         text = element.get_text().lower()
 
-        # Bedrooms
-        bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)s?', text)
-        if bed_match:
-            bedrooms = int(bed_match.group(1))
+        # Bedrooms - check details first
+        for t in [details_text, text]:
+            bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom|bdrm)s?', t)
+            if bed_match:
+                bedrooms = int(bed_match.group(1))
+                break
 
-        # Bathrooms
-        bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', text)
-        if bath_match:
-            bathrooms = float(bath_match.group(1))
+        # Bathrooms - check details first
+        for t in [details_text, text]:
+            bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)s?', t)
+            if bath_match:
+                bathrooms = float(bath_match.group(1))
+                break
 
-        # Square footage
-        sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', text)
-        if sqft_match:
-            sqft = int(sqft_match.group(1).replace(',', ''))
+        # Square footage - check area element first
+        for t in [area_text, text]:
+            sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', t)
+            if sqft_match:
+                sqft = int(sqft_match.group(1).replace(',', ''))
+                break
 
         return bedrooms, bathrooms, sqft
 
     def _extract_description(self, element: Tag) -> Optional[str]:
         """Extract listing description."""
-        for selector in [".description", ".property-description", ".listing-description", "p"]:
+        for selector in [".card-property-description", ".description", ".property-description", ".listing-description", "p"]:
             desc_elem = element.select_one(selector)
             if desc_elem:
                 desc = self.clean_text(desc_elem.get_text())
