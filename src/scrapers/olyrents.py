@@ -345,8 +345,11 @@ class OlyrentsScraper(BaseScraper):
                 if details["description"]:
                     break
 
-            # Keywords
-            details["features"] = self.extract_keywords(text)
+            # Keywords from description only (not whole page with footer)
+            if details["description"]:
+                details["features"] = self.extract_keywords(details["description"])
+            else:
+                details["features"] = []
 
         except Exception as e:
             print(f"[olyrents] Error scraping detail page {url}: {e}")

@@ -338,8 +338,11 @@ class AMHScraper(BaseScraper):
                     if details["description"]:
                         break
 
-            # Extract keywords/features
-            details["features"] = self.extract_keywords(text)
+            # Extract keywords/features from description only (not whole page)
+            if details["description"]:
+                details["features"] = self.extract_keywords(details["description"])
+            else:
+                details["features"] = []
 
         except Exception as e:
             print(f"[amh] Error scraping detail page {url}: {e}")
