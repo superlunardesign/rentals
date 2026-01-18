@@ -92,6 +92,11 @@ sources:
     url: "https://greenerealtygroup.appfolio.com/listings"
     enabled: true
 
+  - name: "Windermere Olympia Property Management"
+    scraper: "windermere"
+    url: "https://windermereolympiapm.appfolio.com/listings"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1
