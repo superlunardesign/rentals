@@ -362,6 +362,7 @@
             {% endif %}
 
             <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
+            <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
         </form>
 
         {% if grouped.best_match %}
@@ -645,6 +646,17 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Run Scrape Now';
+            }
+        }
+
+        async function rematchAll() {
+            try {
+                const response = await fetch('/listings/rematch', { method: 'POST' });
+                const data = await response.json();
+                alert(`Re-matched ${data.total} listings!\nUpdated: ${data.updated}\n\nBy tier:\n${Object.entries(data.by_tier).map(([k,v]) => `${k}: ${v}`).join('\n')}`);
+                window.location.reload();
+            } catch (e) {
+                alert('Re-match failed: ' + e.message);
             }
         }
     </script>

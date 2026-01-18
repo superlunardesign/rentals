@@ -169,6 +169,37 @@ async def run_scrape():
     return {"status": "ok", "results": results}
 
 
+@router.post("/listings/rematch")
+async def rematch_all_listings(db: Session = Depends(get_db)):
+    """Re-run matching on all listings with current criteria."""
+    from ..services import MatchingService
+
+    matcher = MatchingService()
+    listings = db.query(Listing).all()
+
+    updated = 0
+    for listing in listings:
+        old_tier = listing.match_tier
+        matcher.update_listing_match(listing)
+        if listing.match_tier != old_tier:
+            updated += 1
+
+    db.commit()
+
+    # Count by tier
+    tier_counts = {}
+    for listing in listings:
+        tier = listing.match_tier or "unknown"
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+    return {
+        "status": "ok",
+        "total": len(listings),
+        "updated": updated,
+        "by_tier": tier_counts
+    }
+
+
 @router.get("/api/listings")
 async def get_listings(
     tier: Optional[str] = Query(None),
