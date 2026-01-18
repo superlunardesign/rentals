@@ -54,7 +54,7 @@ keywords:
 sources:
   - name: "Olympic Landlord & Rental Services"
     scraper: "olyrents"
-    url: "https://olyrents.com/properties/olympia/"
+    url: "https://olyrents.propertyware.com/"
     enabled: true
 
   - name: "Team NW Property Management"
