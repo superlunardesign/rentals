@@ -68,14 +68,13 @@ class SimplyHomeScraper(BrowserScraper):
             if listing_count == 0:
                 return listings
 
-            # Click on first listing to enter detail view
-            print(f"[{self.source_name}] Clicking first listing...")
-            await page.evaluate("gotoDetail(0)")
-            await page.wait_for_timeout(2000)
-
-            # Loop through all listings using Next button
+            # Loop through all listings by calling gotoDetail(i) directly
             for i in range(listing_count):
                 try:
+                    print(f"[{self.source_name}] Loading listing {i+1}/{listing_count}...")
+                    await page.evaluate(f"gotoDetail({i})")
+                    await page.wait_for_timeout(1500)
+
                     # Wait for detail view to load
                     await page.wait_for_selector("#pw_listing_widget_tabs_detail_address", timeout=5000)
 
@@ -88,11 +87,6 @@ class SimplyHomeScraper(BrowserScraper):
                     if listing:
                         listings.append(listing)
                         print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-
-                    # Click Next to go to next listing (if not last)
-                    if i < listing_count - 1:
-                        await page.evaluate("gotoNextBuilding()")
-                        await page.wait_for_timeout(1500)
 
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i}: {e}")
