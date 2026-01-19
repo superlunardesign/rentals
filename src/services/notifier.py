@@ -88,15 +88,39 @@ class TelegramNotifier:
             return False
 
     def notify_multiple_listings(self, listings: list[Listing]) -> int:
-        """Send notifications for multiple new listings. Returns count sent."""
+        """Send individual notifications for each new listing. Returns count sent."""
         sent = 0
         for listing in listings:
             if self.notify_new_listing(listing):
                 sent += 1
         return sent
 
+    def _format_listing_line(self, listing: Listing) -> str:
+        """Format a single listing as a compact line."""
+        # Price and address
+        price = f"${listing.rent:,}/mo" if listing.rent else "Price N/A"
+        address = self._escape_markdown(listing.title or listing.address or "Unknown")
+
+        # Specs
+        specs = []
+        if listing.bedrooms is not None:
+            specs.append(f"{listing.bedrooms} bd")
+        if listing.bathrooms is not None:
+            bath_str = str(listing.bathrooms).rstrip('0').rstrip('.')
+            specs.append(f"{bath_str} ba")
+        if listing.sqft:
+            specs.append(f"{listing.sqft:,} sq ft")
+        specs_str = ", ".join(specs) if specs else "Specs N/A"
+
+        # URL
+        url = listing.url or ""
+
+        return f"*{price}* \\| {address}\n{specs_str}\n{url}"
+
     def _format_listing_message(self, listing: Listing) -> str:
-        """Format a listing into a Telegram message."""
+        """Format a single listing into a Telegram message (for individual notifications)."""
+        dashboard_url = os.environ.get("RENDER_EXTERNAL_URL", "https://rentals-09tb.onrender.com")
+
         # Emoji based on tier
         tier_emoji = {
             "BEST_MATCH": "🌟",
@@ -104,37 +128,15 @@ class TelegramNotifier:
             "FLEXIBLE": "🔶",
         }.get(listing.match_tier, "📋")
 
-        # Build message parts
+        tier_label = (listing.match_tier or "Listing").replace("_", " ").title()
+
         lines = [
-            f"{tier_emoji} *New {listing.match_tier or 'Listing'}*",
+            f"🏠 *New {tier_label} Found\\!*",
             "",
+            f"[View Dashboard]({dashboard_url})",
+            "",
+            self._format_listing_line(listing),
         ]
-
-        if listing.title:
-            lines.append(f"📍 {self._escape_markdown(listing.title)}")
-
-        if listing.rent:
-            lines.append(f"💰 ${listing.rent:,}/mo")
-
-        specs = []
-        if listing.bedrooms is not None:
-            specs.append(f"{listing.bedrooms} bed")
-        if listing.bathrooms is not None:
-            specs.append(f"{listing.bathrooms} bath")
-        if listing.sqft:
-            specs.append(f"{listing.sqft:,} sqft")
-        if specs:
-            lines.append(f"🏠 {' • '.join(specs)}")
-
-        if listing.match_score:
-            lines.append(f"📊 Match: {listing.match_score}%")
-
-        if listing.matched_keywords:
-            keywords = listing.matched_keywords.split(",")[:3]  # Top 3
-            lines.append(f"🏷️ {', '.join(keywords)}")
-
-        lines.append("")
-        lines.append(f"[View Listing]({listing.url})")
 
         return "\n".join(lines)
 
