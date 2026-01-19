@@ -911,16 +911,20 @@
         async function runScrape() {
             const btn = document.querySelector('.scrape-btn');
             btn.disabled = true;
-            btn.textContent = 'Scraping...';
+            btn.textContent = 'Starting...';
 
             try {
                 const response = await fetch('/scrape/run', { method: 'POST' });
                 const data = await response.json();
-                alert(`Scrape complete!\nFound: ${data.results.total_found}\nNew: ${data.results.new_listings}`);
-                window.location.reload();
+                alert('Scrape started in background!\n\nCheck logs or refresh page in a few minutes to see new listings.');
+                btn.textContent = 'Scraping...';
+                // Re-enable after 30 seconds
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = 'Run Scrape Now';
+                }, 30000);
             } catch (e) {
                 alert('Scrape failed: ' + e.message);
-            } finally {
                 btn.disabled = false;
                 btn.textContent = 'Run Scrape Now';
             }

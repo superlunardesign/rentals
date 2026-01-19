@@ -197,10 +197,21 @@ async def mark_all_seen(db: Session = Depends(get_db)):
 
 @router.post("/scrape/run")
 async def run_scrape():
-    """Manually trigger a scrape."""
-    service = ScraperService()
-    results = service.run_all_scrapers()
-    return {"status": "ok", "results": results}
+    """Manually trigger a scrape in background."""
+    import threading
+
+    def run_in_background():
+        try:
+            service = ScraperService()
+            results = service.run_all_scrapers()
+            print(f"[manual scrape] Complete: {results}")
+        except Exception as e:
+            print(f"[manual scrape] Error: {e}")
+
+    thread = threading.Thread(target=run_in_background, daemon=True)
+    thread.start()
+
+    return {"status": "ok", "message": "Scrape started in background", "results": {"total_found": "pending", "new_listings": "pending"}}
 
 
 @router.get("/scrape/debug/{scraper_name}")
