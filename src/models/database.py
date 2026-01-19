@@ -1,15 +1,33 @@
 """Database setup and session management."""
 
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Database file location
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "rentals.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
-# Create engine
-engine = create_engine(DATABASE_URL, echo=False)
+# Create engine with better concurrency settings
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={
+        "check_same_thread": False,  # Allow multi-threaded access
+        "timeout": 30,  # Wait up to 30 seconds for locks
+    }
+)
+
+
+# Enable WAL mode for better concurrent read/write performance
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+    cursor.close()
+
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
