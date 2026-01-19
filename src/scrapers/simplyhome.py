@@ -61,19 +61,59 @@ class SimplyHomeScraper(BrowserScraper):
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(3000)  # Wait for JS to render
 
-            # Count how many listings are available
-            # Use the pw_listing_widget's internal data if available, otherwise count tables
-            listing_count = await page.evaluate("""
+            # Count how many listings are available using multiple methods
+            listing_info = await page.evaluate("""
                 () => {
-                    // Try to get count from PropertyWare's internal state
-                    if (typeof pw_listing_widget !== 'undefined' && pw_listing_widget.listings) {
-                        return pw_listing_widget.listings.length;
+                    let info = {
+                        method: null,
+                        count: 0,
+                        debug: {}
+                    };
+
+                    // Method 1: PropertyWare's internal state
+                    if (typeof pw_listing_widget !== 'undefined') {
+                        info.debug.pw_widget_exists = true;
+                        if (pw_listing_widget.listings) {
+                            info.method = 'pw_listing_widget.listings';
+                            info.count = pw_listing_widget.listings.length;
+                            return info;
+                        }
+                        if (pw_listing_widget.data && pw_listing_widget.data.listings) {
+                            info.method = 'pw_listing_widget.data.listings';
+                            info.count = pw_listing_widget.data.listings.length;
+                            return info;
+                        }
                     }
-                    // Fallback: count tables in the list view
-                    const tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
-                    return tables.length;
+
+                    // Method 2: Count tables in specific container
+                    let tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
+                    info.debug.tables_in_list_container = tables.length;
+                    if (tables.length > 0) {
+                        info.method = '#pw_listing_widget_tabs_list tables';
+                        info.count = tables.length;
+                        return info;
+                    }
+
+                    // Method 3: Count all listTable elements
+                    tables = document.querySelectorAll('table.listTable');
+                    info.debug.all_list_tables = tables.length;
+                    if (tables.length > 0 && tables.length < 50) {
+                        // Only use if reasonable count
+                        info.method = 'all table.listTable';
+                        info.count = tables.length;
+                        return info;
+                    }
+
+                    // Method 4: Count listing items by common patterns
+                    const listingItems = document.querySelectorAll('.listing-item, [class*="listing"], [id*="listing"]');
+                    info.debug.listing_items = listingItems.length;
+
+                    return info;
                 }
             """)
+
+            print(f"[{self.source_name}] Listing detection: method={listing_info.get('method')}, debug={listing_info.get('debug')}")
+            listing_count = listing_info.get('count', 0)
             print(f"[{self.source_name}] Found {listing_count} listing tables")
 
             if listing_count == 0:
