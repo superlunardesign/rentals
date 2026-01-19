@@ -154,15 +154,21 @@ class OlyrentsScraper(BrowserScraper):
                     # Navigate to detail view
                     await page.evaluate(f"gotoDetail({i})")
 
-                    # Wait for the detail view to update - watch for address to change
+                    # Wait for the detail view to load with content
                     # Use a longer initial wait to let the JS render
                     await page.wait_for_timeout(2000)
 
                     # Try to get the detail content with retries
                     for attempt in range(3):
                         try:
-                            # Wait for address element
-                            await page.wait_for_selector("#pw_listing_widget_tabs_detail_address", timeout=8000, state="visible")
+                            # Wait for address element to have text content (not just exist)
+                            await page.wait_for_function(
+                                """() => {
+                                    const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                                    return el && el.textContent && el.textContent.trim().length > 5;
+                                }""",
+                                timeout=8000
+                            )
 
                             # Get the page content
                             html = await page.content()
@@ -181,7 +187,12 @@ class OlyrentsScraper(BrowserScraper):
                         except Exception as retry_e:
                             if attempt < 2:
                                 print(f"[{self.source_name}] Retry {attempt+1} for listing {i}...")
-                                await page.wait_for_timeout(1000)
+                                # Try clicking the detail tab to force it
+                                try:
+                                    await page.click('#pw_listing_widget_tabs li:has-text("Detail")', timeout=2000)
+                                except:
+                                    pass
+                                await page.wait_for_timeout(1500)
                             else:
                                 raise retry_e
 
