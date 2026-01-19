@@ -94,11 +94,14 @@ async def dashboard(
         "best_match": [],
         "match": [],
         "flexible": [],
+        "excluded": [],
     }
 
     for listing in listings:
         if listing.is_favorite:
             grouped["favorites"].append(listing)
+        elif listing.match_tier == "excluded":
+            grouped["excluded"].append(listing)
         elif listing.match_tier in grouped:
             grouped[listing.match_tier].append(listing)
 

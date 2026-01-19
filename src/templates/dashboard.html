@@ -148,6 +148,15 @@
             background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
         }
 
+        /* Excluded - Gray */
+        .section.excluded .section-header {
+            background: linear-gradient(135deg, #7f8c8d 0%, #95a5a6 100%);
+        }
+
+        .section.excluded .listing-card {
+            opacity: 0.7;
+        }
+
         .listings {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -699,6 +708,62 @@
                             <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
                             {% endif %}
                             <button onclick="hideListing({{ listing.id }})">Hide</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if grouped.excluded %}
+        <section class="section excluded collapsed">
+            <div class="section-header" onclick="toggleSection(this)">
+                <h2>Excluded</h2>
+                <span class="badge">{{ grouped.excluded|length }}</span>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="listings">
+                {% for listing in grouped.excluded %}
+                <div class="listing-card" data-id="{{ listing.id }}">
+                    <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
+                        {% if listing.image_url %}
+                        <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                        {% else %}
+                        <div class="listing-image-placeholder">🏠</div>
+                        {% endif %}
+                    </a>
+
+                    <div class="card-body">
+                        <div class="title">
+                            <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                        </div>
+
+                        <div class="price">
+                            {% if listing.rent %}
+                                ${{ "{:,}".format(listing.rent) }}/mo
+                            {% else %}
+                                Price TBD
+                            {% endif %}
+                        </div>
+
+                        <div class="specs">
+                            {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                            {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                            {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                        </div>
+
+                        {% if listing.city %}
+                        <div class="address">{{ listing.city }}, {{ listing.state or 'WA' }}</div>
+                        {% endif %}
+
+                        <div class="source">via {{ listing.source_name }}</div>
+
+                        <div class="actions">
+                            <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
+                                {{ '★' if listing.is_favorite else '☆' }} Favorite
+                            </button>
                         </div>
                     </div>
                 </div>
