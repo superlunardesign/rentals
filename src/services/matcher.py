@@ -331,9 +331,14 @@ class MatchingService:
         if listing.city and listing.city.lower() == "lacey":
             return MatchTier.FLEXIBLE
 
-        # Townhouses and duplexes are always FLEXIBLE tier (user preference)
-        text = f"{listing.title or ''} {listing.description or ''} {listing.features or ''}".lower()
-        if any(prop_type in text for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex"]):
+        # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
+        text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
+        text_lower = text.lower()
+        # Check for property type keywords
+        if any(prop_type in text_lower for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex", "unit "]):
+            return MatchTier.FLEXIBLE
+        # Check for unit indicators like "#1", "#2", "Unit A", or trailing "A"/"B" in address
+        if re.search(r'#\d+|unit\s*[a-z0-9]|\s[ab]\s*$|\s[ab],', text_lower):
             return MatchTier.FLEXIBLE
 
         # BEST MATCH: Perfect listing
