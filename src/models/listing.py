@@ -56,6 +56,7 @@ class Listing(Base):
     is_new: Mapped[bool] = Column(Boolean, default=True)  # New since last view
     is_favorite: Mapped[bool] = Column(Boolean, default=False)
     is_hidden: Mapped[bool] = Column(Boolean, default=False)  # User manually hidden
+    manual_tier: Mapped[Optional[str]] = Column(String(20))  # User override: best_match, match, flexible, excluded
 
     # Timestamps
     first_seen: Mapped[datetime] = Column(DateTime, default=datetime.utcnow)

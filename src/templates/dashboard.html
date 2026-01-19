@@ -318,6 +318,23 @@
             border-color: #f39c12;
         }
 
+        .listing-card .actions select {
+            padding: 5px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .manual-badge {
+            background: #9b59b6;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-left: 5px;
+        }
+
         .empty-state {
             text-align: center;
             padding: 40px;
@@ -708,6 +725,13 @@
                             <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
                             {% endif %}
                             <button onclick="hideListing({{ listing.id }})">Hide</button>
+                            <select onchange="setTier({{ listing.id }}, this.value)">
+                                <option value="">Move to...</option>
+                                <option value="best_match">Best Match</option>
+                                <option value="match">Match</option>
+                                <option value="excluded">Excluded</option>
+                                {% if listing.manual_tier %}<option value="clear">Auto (clear)</option>{% endif %}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -738,6 +762,7 @@
                     <div class="card-body">
                         <div class="title">
                             <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                            {% if listing.manual_tier %}<span class="manual-badge">Manual</span>{% endif %}
                         </div>
 
                         <div class="price">
@@ -764,6 +789,13 @@
                             <button class="favorite {% if listing.is_favorite %}active{% endif %}" onclick="toggleFavorite({{ listing.id }}, this)">
                                 {{ '★' if listing.is_favorite else '☆' }} Favorite
                             </button>
+                            <select onchange="setTier({{ listing.id }}, this.value)">
+                                <option value="">Move to...</option>
+                                <option value="best_match">Best Match</option>
+                                <option value="match">Match</option>
+                                <option value="flexible">Flexible</option>
+                                {% if listing.manual_tier %}<option value="clear">Auto (clear override)</option>{% endif %}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -841,6 +873,17 @@
                 window.location.reload();
             } catch (e) {
                 alert('Re-match failed: ' + e.message);
+            }
+        }
+
+        async function setTier(id, tier) {
+            if (!tier) return;
+            const response = await fetch(`/listings/${id}/set-tier/${tier}`, { method: 'POST' });
+            const data = await response.json();
+            if (data.status === 'ok') {
+                window.location.reload();
+            } else {
+                alert('Failed to move: ' + data.message);
             }
         }
     </script>

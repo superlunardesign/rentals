@@ -125,13 +125,26 @@ class MatchingService:
         )
 
     def _has_dealbreakers(self, listing: Listing) -> bool:
-        """Check if listing contains any dealbreaker keywords."""
+        """Check if listing contains any dealbreaker keywords.
+
+        Smart matching: skips false positives like "no roommates" when looking for "roommate"
+        """
         dealbreakers = [kw.lower() for kw in self.config.keywords.dealbreakers]
         text = f"{listing.title or ''} {listing.description or ''} {listing.features or ''}".lower()
 
         for dealbreaker in dealbreakers:
             if dealbreaker in text:
-                return True
+                # Check for false positives - "no X" or "not X" patterns
+                # e.g., "no roommates" shouldn't trigger "roommate" dealbreaker
+                false_positive_patterns = [
+                    f"no {dealbreaker}",
+                    f"no {dealbreaker}s",
+                    f"not {dealbreaker}",
+                    f"not {dealbreaker}s",
+                ]
+                is_false_positive = any(fp in text for fp in false_positive_patterns)
+                if not is_false_positive:
+                    return True
         return False
 
     # Zip code to city mapping for Thurston County area

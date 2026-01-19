@@ -89,6 +89,7 @@ async def dashboard(
     ))
 
     # Group by tier for display
+    # Use manual_tier if set, otherwise use automatic match_tier
     grouped = {
         "favorites": [],
         "best_match": [],
@@ -98,12 +99,15 @@ async def dashboard(
     }
 
     for listing in listings:
+        # Determine effective tier (manual override takes precedence)
+        effective_tier = listing.manual_tier or listing.match_tier
+
         if listing.is_favorite:
             grouped["favorites"].append(listing)
-        elif listing.match_tier == "excluded":
+        elif effective_tier == "excluded":
             grouped["excluded"].append(listing)
-        elif listing.match_tier in grouped:
-            grouped[listing.match_tier].append(listing)
+        elif effective_tier in grouped:
+            grouped[effective_tier].append(listing)
 
     # Get unique sources for filter dropdown
     sources = db.query(Listing.source_name).distinct().all()
@@ -151,6 +155,24 @@ async def hide_listing(listing_id: int, db: Session = Depends(get_db)):
         listing.is_hidden = True
         db.commit()
         return {"status": "ok"}
+    return {"status": "error", "message": "Listing not found"}
+
+
+@router.post("/listings/{listing_id}/set-tier/{tier}")
+async def set_manual_tier(listing_id: int, tier: str, db: Session = Depends(get_db)):
+    """Manually set a listing's tier (overrides automatic matching)."""
+    valid_tiers = ["best_match", "match", "flexible", "excluded", "clear"]
+    if tier not in valid_tiers:
+        return {"status": "error", "message": f"Invalid tier. Must be one of: {valid_tiers}"}
+
+    listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    if listing:
+        if tier == "clear":
+            listing.manual_tier = None  # Clear override, use automatic
+        else:
+            listing.manual_tier = tier
+        db.commit()
+        return {"status": "ok", "manual_tier": listing.manual_tier}
     return {"status": "error", "message": "Listing not found"}
 
 
