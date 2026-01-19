@@ -66,64 +66,100 @@ class SimplyHomeScraper(BaseScraper):
                 if image_url and not image_url.startswith("http"):
                     image_url = urljoin(self.base_url, image_url)
 
-            # Extract title from the first link in description cell
-            desc_td = table.select_one(".listItemDescTd")
-            if desc_td:
-                # Title is in the first <a> tag
-                title_link = desc_td.select_one("a")
-                if title_link:
-                    title = self.clean_text(title_link.get_text())
-                    # Extract detail URL
-                    href = title_link.get("href", "")
-                    if href and not href.startswith("javascript"):
-                        detail_url = urljoin(self.base_url, href)
-                    else:
-                        detail_match = re.search(r'gotoDetail\((\d+)\)', href)
-                        if detail_match:
-                            detail_url = f"{self.base_url}#listing_{detail_match.group(1)}"
+            # Get all TDs for fallback
+            all_tds = table.select("td")
 
-                # Address from text - look for WA address pattern
-                full_text = desc_td.get_text()
-                addr_match = re.search(r'(\d+[^,]+,\s*\w+,\s*WA\s*\d{5}(?:-\d{4})?)', full_text)
+            # Try multiple selectors for description cell
+            desc_td = table.select_one(".listItemDescTd")
+            if not desc_td:
+                desc_td = table.select_one("td.listItemDescTd")
+            if not desc_td and len(all_tds) >= 2:
+                # Try the second td (first is usually image)
+                second_td = all_tds[1]
+                text = second_td.get_text(strip=True)
+                if text and len(text) > 30:
+                    desc_td = second_td
+            if not desc_td:
+                # Try any td with listing-like content
+                for td in all_tds:
+                    text = td.get_text(strip=True)
+                    if text and len(text) > 30 and (
+                        "$" in text or "BR" in text or "bed" in text.lower() or
+                        re.search(r'\d+\s+\w+\s+(St|Ave|Rd|Dr|Way|Ln|Ct|Blvd)', text, re.I) or "WA" in text
+                    ):
+                        desc_td = td
+                        break
+
+            # If no desc_td found, use the whole table
+            parse_target = desc_td if desc_td else table
+
+            # Title is in the first <a> tag
+            title_link = parse_target.select_one("a")
+            if title_link:
+                title = self.clean_text(title_link.get_text())
+                # Extract detail URL
+                href = title_link.get("href", "")
+                if href and not href.startswith("javascript"):
+                    detail_url = urljoin(self.base_url, href)
+                else:
+                    detail_match = re.search(r'gotoDetail\((\d+)\)', href)
+                    if detail_match:
+                        detail_url = f"{self.base_url}#listing_{detail_match.group(1)}"
+
+            # Get all text for regex extraction
+            full_text = parse_target.get_text()
+
+            # Address patterns
+            addr_match = re.search(r'(\d+[^,]+,\s*\w+,\s*WA\s*\d{5}(?:-\d{4})?)', full_text)
+            if addr_match:
+                address = self.clean_text(addr_match.group(1))
+            else:
+                # Try simpler address pattern
+                addr_match = re.search(r'(\d+\s+[A-Za-z\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Way|Blvd|Ln|Lane|Ct|Court)[^,\n]*)', full_text, re.I)
                 if addr_match:
                     address = self.clean_text(addr_match.group(1))
 
-                # Extract specs from the nested table
-                spec_table = desc_td.select_one("table")
-                if spec_table:
-                    spec_text = spec_table.get_text()
+            # Extract specs - try multiple patterns
+            # Monthly Rent
+            rent_match = re.search(r'(?:Monthly Rent|Rent):\s*\$?([\d,]+)', full_text, re.I)
+            if rent_match:
+                rent = int(rent_match.group(1).replace(',', '').split('.')[0])
+            else:
+                rent_match = re.search(r'\$\s*([\d,]+)(?:\s*/\s*(?:mo|month))?', full_text, re.I)
+                if rent_match:
+                    rent = int(rent_match.group(1).replace(',', ''))
 
-                    # Monthly Rent
-                    rent_match = re.search(r'Monthly Rent:\s*\$?([\d,]+)', spec_text)
-                    if rent_match:
-                        rent = int(rent_match.group(1).replace(',', '').split('.')[0])
+            # Bedrooms
+            br_match = re.search(r'(?:BR|Bed|Bedroom)s?:\s*(\d+)', full_text, re.I)
+            if br_match:
+                bedrooms = int(br_match.group(1))
+            else:
+                br_match = re.search(r'(\d+)\s*(?:BR|Bed|Bedroom)s?', full_text, re.I)
+                if br_match:
+                    bedrooms = int(br_match.group(1))
 
-                    # Bedrooms
-                    br_match = re.search(r'BR:\s*(\d+)', spec_text)
-                    if br_match:
-                        bedrooms = int(br_match.group(1))
+            # Bathrooms
+            ba_match = re.search(r'(?:BA|Bath|Bathroom)s?:\s*(\d+\.?\d*)', full_text, re.I)
+            if ba_match:
+                bathrooms = float(ba_match.group(1))
+            else:
+                ba_match = re.search(r'(\d+\.?\d*)\s*(?:BA|Bath|Bathroom)s?', full_text, re.I)
+                if ba_match:
+                    bathrooms = float(ba_match.group(1))
 
-                    # Bathrooms
-                    ba_match = re.search(r'BA:\s*(\d+\.?\d*)', spec_text)
-                    if ba_match:
-                        bathrooms = float(ba_match.group(1))
+            # Sqft
+            sqft_match = re.search(r'(?:Sq\.?\s*Ft\.?|sqft):\s*([\d,]+)', full_text, re.I)
+            if sqft_match:
+                sqft = int(sqft_match.group(1).replace(',', ''))
+            else:
+                sqft_match = re.search(r'([\d,]+)\s*sq\.?\s*ft', full_text, re.I)
+                if sqft_match:
+                    sqft = int(sqft_match.group(1).replace(',', ''))
 
-                    # Sqft
-                    sqft_match = re.search(r'Sq\.?\s*Ft\.?:\s*([\d,]+)', spec_text, re.I)
-                    if sqft_match:
-                        sqft = int(sqft_match.group(1).replace(',', ''))
-
-                # Description is in <p> tag
-                desc_p = desc_td.select_one("p")
-                if desc_p:
-                    description = self.clean_text(desc_p.get_text())
-
-                # Try to extract sqft from title or description if not found
-                if not sqft:
-                    sqft_text = f"{title or ''} {description or ''}"
-                    sqft_match = re.search(r'([\d,]+)\s*sq\.?\s*ft', sqft_text, re.I)
-                    if sqft_match:
-                        sqft = int(sqft_match.group(1).replace(',', ''))
+            # Description is in <p> tag
+            desc_p = parse_target.select_one("p")
+            if desc_p:
+                description = self.clean_text(desc_p.get_text())
 
             if not title and not address:
                 return None
