@@ -61,11 +61,20 @@ class SimplyHomeScraper(BrowserScraper):
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(3000)  # Wait for JS to render
 
-            # Count how many listings are available
+            # Count how many listings are available (only visible ones)
             listing_count = await page.evaluate("""
                 () => {
                     const tables = document.querySelectorAll('table.listTable');
-                    return tables.length;
+                    let visibleCount = 0;
+                    tables.forEach(t => {
+                        // Check if table is visible (has dimensions and not hidden)
+                        const rect = t.getBoundingClientRect();
+                        const style = window.getComputedStyle(t);
+                        if (rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {
+                            visibleCount++;
+                        }
+                    });
+                    return visibleCount;
                 }
             """)
             print(f"[{self.source_name}] Found {listing_count} listing tables")
