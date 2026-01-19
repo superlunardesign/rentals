@@ -175,13 +175,3 @@ class WindermereScraper(BaseScraper):
         except Exception as e:
             print(f"[windermere] Error parsing listing: {e}")
             return None
-
-    def scrape_detail_page(self, url: str) -> dict:
-        """AppFolio detail pages have same info as listing cards."""
-        return {
-            "bedrooms": None,
-            "bathrooms": None,
-            "sqft": None,
-            "description": None,
-            "features": [],
-        }
