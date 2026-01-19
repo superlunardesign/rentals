@@ -40,10 +40,12 @@ class RentalScheduler:
         self.scheduler.start()
         print(f"[scheduler] Started - scraping every {interval_hours} hour(s)")
 
-        # Run immediately if configured
+        # Run immediately if configured (in background thread so server can start)
         if self.config.scheduler.run_on_startup:
-            print("[scheduler] Running initial scrape...")
-            self._run_scrape_job()
+            import threading
+            print("[scheduler] Starting initial scrape in background...")
+            thread = threading.Thread(target=self._run_scrape_job, daemon=True)
+            thread.start()
 
     def stop(self):
         """Stop the scheduler."""
