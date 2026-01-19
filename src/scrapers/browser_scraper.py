@@ -50,11 +50,16 @@ class BrowserScraper(BaseScraper):
                 from playwright.async_api import async_playwright
                 print(f"[{self.source_name}] Starting Playwright...")
                 self._playwright = await async_playwright().start()
-                print(f"[{self.source_name}] Launching Chromium...")
-                self._browser = await self._playwright.chromium.launch(
-                    headless=True,
-                    args=['--no-sandbox', '--disable-dev-shm-usage']
-                )
+                # Try Firefox first (fewer system deps), fall back to Chromium
+                print(f"[{self.source_name}] Launching Firefox...")
+                try:
+                    self._browser = await self._playwright.firefox.launch(headless=True)
+                except Exception as firefox_err:
+                    print(f"[{self.source_name}] Firefox failed: {firefox_err}, trying Chromium...")
+                    self._browser = await self._playwright.chromium.launch(
+                        headless=True,
+                        args=['--no-sandbox', '--disable-dev-shm-usage']
+                    )
                 print(f"[{self.source_name}] Browser launched successfully!")
             except Exception as e:
                 print(f"[{self.source_name}] Failed to start browser: {e}")
