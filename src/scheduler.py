@@ -43,8 +43,15 @@ class RentalScheduler:
         # Run immediately if configured (in background thread so server can start)
         if self.config.scheduler.run_on_startup:
             import threading
-            print("[scheduler] Starting initial scrape in background...")
-            thread = threading.Thread(target=self._run_scrape_job, daemon=True)
+            import time
+
+            def delayed_scrape():
+                # Wait for server to fully start and bind port (Render needs this)
+                time.sleep(5)
+                self._run_scrape_job()
+
+            print("[scheduler] Initial scrape will start in 5 seconds...")
+            thread = threading.Thread(target=delayed_scrape, daemon=True)
             thread.start()
 
     def stop(self):

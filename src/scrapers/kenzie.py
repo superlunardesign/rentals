@@ -156,6 +156,18 @@ class KenzieScraper(BaseScraper):
 
             title = address or f"Property {source_id}"
 
+            # Skip listings without valid address (likely storage units, etc.)
+            if not address or len(address) < 10:
+                return None
+
+            # Skip very cheap listings (likely storage units)
+            if rent and rent < 500:
+                return None
+
+            # Skip listings with annual pricing indicators
+            if "/yr" in all_text.lower() or "per year" in all_text.lower():
+                return None
+
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
