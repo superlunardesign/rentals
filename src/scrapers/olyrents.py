@@ -59,7 +59,28 @@ class OlyrentsScraper(BrowserScraper):
 
             print(f"[{self.source_name}] Loading page...")
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)  # Wait for JS to render
+            await page.wait_for_timeout(2000)  # Initial wait
+
+            # Wait for PropertyWare widget to load
+            print(f"[{self.source_name}] Waiting for PropertyWare widget...")
+            try:
+                await page.wait_for_selector('#pw_listing_widget_tabs_list', timeout=10000)
+                print(f"[{self.source_name}] Widget container found")
+            except:
+                print(f"[{self.source_name}] Widget container not found, checking page structure...")
+                # Debug: log what's on the page
+                debug_info = await page.evaluate("""
+                    () => ({
+                        url: window.location.href,
+                        hasIframes: document.querySelectorAll('iframe').length,
+                        bodyText: document.body.innerText.substring(0, 500),
+                        allIds: Array.from(document.querySelectorAll('[id]')).map(e => e.id).slice(0, 20)
+                    })
+                """)
+                print(f"[{self.source_name}] Debug: {debug_info}")
+
+            # Give it more time for content to populate
+            await page.wait_for_timeout(3000)
 
             # Count how many listings are available using multiple methods
             listing_info = await page.evaluate("""
@@ -107,7 +128,16 @@ class OlyrentsScraper(BrowserScraper):
                         return info;
                     }
 
-                    // Method 3: Count listing cards (each listing has one card with image)
+                    // Method 3: Count list items with pw_listing_widget_tabs_list_item class
+                    const listItems = document.querySelectorAll('li.pw_listing_widget_tabs_list_item[style*="display: block"], li.pw_listing_widget_tabs_list_item:not([style*="display: none"])');
+                    info.debug.list_items_visible = listItems.length;
+                    if (listItems.length > 0) {
+                        info.method = 'visible list items';
+                        info.count = listItems.length;
+                        return info;
+                    }
+
+                    // Method 4: Count listing cards (each listing has one card with image)
                     const listingCards = document.querySelectorAll('#pw_listing_widget_tabs_list .pw-listing-card, #pw_listing_widget_tabs_list .listRow');
                     info.debug.listing_cards = listingCards.length;
                     if (listingCards.length > 0) {
@@ -116,7 +146,16 @@ class OlyrentsScraper(BrowserScraper):
                         return info;
                     }
 
-                    // Method 4: Count images in list view (one per listing)
+                    // Method 5: Count gotoDetail links
+                    const detailLinks = document.querySelectorAll('a[href*="gotoDetail"]');
+                    info.debug.detail_links = detailLinks.length;
+                    if (detailLinks.length > 0) {
+                        info.method = 'gotoDetail links';
+                        info.count = detailLinks.length;
+                        return info;
+                    }
+
+                    // Method 6: Count images in list view (one per listing)
                     const listImages = document.querySelectorAll('#pw_listing_widget_tabs_list img.listPhoto');
                     info.debug.list_images = listImages.length;
                     if (listImages.length > 0) {
@@ -125,7 +164,7 @@ class OlyrentsScraper(BrowserScraper):
                         return info;
                     }
 
-                    // Method 5: Fallback - count tables but divide by likely tables-per-listing
+                    // Method 7: Fallback - count tables but divide by likely tables-per-listing
                     let tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
                     info.debug.tables_in_list_container = tables.length;
                     if (tables.length > 0) {
