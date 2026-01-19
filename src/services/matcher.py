@@ -322,6 +322,11 @@ class MatchingService:
         if listing.city and listing.city.lower() == "lacey":
             return MatchTier.FLEXIBLE
 
+        # Townhouses and duplexes are always FLEXIBLE tier (user preference)
+        text = f"{listing.title or ''} {listing.description or ''} {listing.features or ''}".lower()
+        if any(prop_type in text for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex"]):
+            return MatchTier.FLEXIBLE
+
         # BEST MATCH: Perfect listing
         # Must be within budget, meet best match room criteria, and have keywords
         if budget_status == "within":
