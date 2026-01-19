@@ -107,6 +107,11 @@ sources:
     url: "https://capitol-pm.managebuilding.com/Resident/Public/Rentals"
     enabled: true
 
+  - name: "Blue Summit Realty"
+    scraper: "bluesummit"
+    url: "https://www.bluesummitrealty.com/property-management/"
+    enabled: true
+
   # --- Slow browser-based PropertyWare scrapers (run last) ---
   - name: "Olympic Landlord & Rental Services"
     scraper: "olyrents"
