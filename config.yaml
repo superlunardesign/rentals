@@ -97,6 +97,11 @@ sources:
     url: "https://windermereolympiapm.appfolio.com/listings"
     enabled: true
 
+  - name: "Simply Home Realty"
+    scraper: "simplyhome"
+    url: "https://simplyhomerealtyllc.propertyware.com/rentals.html"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1
