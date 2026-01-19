@@ -146,35 +146,29 @@ class OlyrentsScraper(BrowserScraper):
             if listing_count == 0:
                 return listings
 
-            # Track last address to detect if navigation failed
-            last_address = ""
-            consecutive_failures = 0
+            # Start with first listing using gotoDetail(0)
+            print(f"[{self.source_name}] Loading listing 1/{listing_count}...")
+            await page.evaluate("gotoDetail(0)")
+            await page.wait_for_timeout(1500)
 
-            # Iterate through each listing using gotoDetail(i)
+            # Wait for first detail to load
+            try:
+                await page.wait_for_function(
+                    """() => {
+                        const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                        return el && el.textContent && el.textContent.trim().length > 5;
+                    }""",
+                    timeout=5000
+                )
+            except:
+                print(f"[{self.source_name}] First listing didn't load, trying to continue...")
+
+            # Track addresses to detect stuck navigation
+            seen_addresses = set()
+
+            # Iterate through listings using gotoNextBuilding()
             for i in range(listing_count):
                 try:
-                    print(f"[{self.source_name}] Loading listing {i+1}/{listing_count}...")
-
-                    # Navigate to detail view using gotoDetail directly
-                    # No need to go back to list view - gotoDetail handles it
-                    await page.evaluate(f"gotoDetail({i})")
-                    await page.wait_for_timeout(1000)
-
-                    # Wait for address to change from the last one
-                    try:
-                        await page.wait_for_function(
-                            f"""() => {{
-                                const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                                if (!el) return false;
-                                const addr = el.textContent.trim();
-                                return addr.length > 5 && addr !== "{last_address.replace('"', '\\"')}";
-                            }}""",
-                            timeout=5000
-                        )
-                    except:
-                        # Maybe it's the same building with multiple units - give it more time
-                        await page.wait_for_timeout(1000)
-
                     # Get the page content
                     html = await page.content()
                     soup = BeautifulSoup(html, "lxml")
@@ -183,33 +177,50 @@ class OlyrentsScraper(BrowserScraper):
                     address_el = soup.select_one("#pw_listing_widget_tabs_detail_address")
                     current_address = address_el.get_text(strip=True) if address_el else ""
 
-                    # Skip if same as last and we've seen it before (navigation stuck)
-                    if current_address and current_address == last_address:
-                        consecutive_failures += 1
-                        if consecutive_failures > 2:
-                            print(f"[{self.source_name}] Navigation seems stuck, stopping...")
-                            break
-                        print(f"[{self.source_name}] Same address as before, retrying...")
-                        continue
-
-                    consecutive_failures = 0
-                    last_address = current_address
+                    # Check for duplicate (we've cycled back to start)
+                    if current_address in seen_addresses:
+                        print(f"[{self.source_name}] Cycled back to seen address, stopping...")
+                        break
+                    seen_addresses.add(current_address)
 
                     # Extract listing from detail view
                     listing = self._parse_detail_view(soup, i)
                     if listing:
                         listings.append(listing)
-                        print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                        print(f"[{self.source_name}] Parsed {i+1}/{listing_count}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
                         # Call callback to save immediately
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
 
+                    # Navigate to next listing (unless this is the last one)
+                    if i < listing_count - 1:
+                        await page.evaluate("gotoNextBuilding()")
+                        await page.wait_for_timeout(1000)
+
+                        # Wait for address to change
+                        try:
+                            escaped_addr = current_address.replace('"', '\\"').replace('\n', ' ')
+                            await page.wait_for_function(
+                                f"""() => {{
+                                    const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                                    if (!el) return false;
+                                    const addr = el.textContent.trim();
+                                    return addr.length > 5 && addr !== "{escaped_addr}";
+                                }}""",
+                                timeout=5000
+                            )
+                        except:
+                            # Give it a bit more time
+                            await page.wait_for_timeout(500)
+
                 except Exception as e:
-                    print(f"[{self.source_name}] Error on listing {i}: {e}")
-                    consecutive_failures += 1
-                    if consecutive_failures > 3:
-                        print(f"[{self.source_name}] Too many failures, stopping...")
-                        break
+                    print(f"[{self.source_name}] Error on listing {i+1}: {e}")
+                    # Try to continue to next
+                    try:
+                        await page.evaluate("gotoNextBuilding()")
+                        await page.wait_for_timeout(1000)
+                    except:
+                        pass
                     continue
 
         except Exception as e:
