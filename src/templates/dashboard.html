@@ -224,6 +224,49 @@
             text-transform: uppercase;
         }
 
+        /* Tier badges - similar style to new-badge */
+        .listing-card .tier-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .listing-card .tier-badge.best-match {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .listing-card .tier-badge.match {
+            background: #cce5ff;
+            color: #004085;
+        }
+
+        .listing-card .tier-badge.flexible {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        /* Right border color based on tier */
+        .listing-card.tier-best-match {
+            border-right: 5px solid #27ae60;
+        }
+
+        .listing-card.tier-match {
+            border-right: 5px solid #3498db;
+        }
+
+        .listing-card.tier-flexible {
+            border-right: 5px solid #f39c12;
+        }
+
+        .listing-card.tier-excluded {
+            border-right: 5px solid #95a5a6;
+        }
+
         .listing-card .title {
             font-weight: 600;
             margin-bottom: 8px;
@@ -511,7 +554,7 @@
             </div>
             <div class="listings">
                 {% for listing in grouped.best_match %}
-                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                <div class="listing-card tier-best-match {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
                     <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
                         {% if listing.image_url %}
                         <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -526,6 +569,7 @@
                         <span class="new-badge">New</span>
                         {% endif %}
 
+                        <span class="tier-badge best-match">Best Match</span>
                         <div class="title">
                             <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
                             <span class="score-badge">{{ listing.match_score or 0 }}%</span>
@@ -571,6 +615,13 @@
                             <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
                             {% endif %}
                             <button onclick="hideListing({{ listing.id }})">Hide</button>
+                            <select onchange="setTier({{ listing.id }}, this.value)">
+                                <option value="">Move to...</option>
+                                <option value="match">Match</option>
+                                <option value="flexible">Flexible</option>
+                                <option value="excluded">Excluded</option>
+                                {% if listing.manual_tier %}<option value="clear">Auto (clear)</option>{% endif %}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -588,7 +639,7 @@
             </div>
             <div class="listings">
                 {% for listing in grouped.match %}
-                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                <div class="listing-card tier-match {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
                     <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
                         {% if listing.image_url %}
                         <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -603,6 +654,7 @@
                         <span class="new-badge">New</span>
                         {% endif %}
 
+                        <span class="tier-badge match">Match</span>
                         <div class="title">
                             <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
                             <span class="score-badge">{{ listing.match_score or 0 }}%</span>
@@ -648,6 +700,13 @@
                             <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
                             {% endif %}
                             <button onclick="hideListing({{ listing.id }})">Hide</button>
+                            <select onchange="setTier({{ listing.id }}, this.value)">
+                                <option value="">Move to...</option>
+                                <option value="best_match">Best Match</option>
+                                <option value="flexible">Flexible</option>
+                                <option value="excluded">Excluded</option>
+                                {% if listing.manual_tier %}<option value="clear">Auto (clear)</option>{% endif %}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -665,7 +724,7 @@
             </div>
             <div class="listings">
                 {% for listing in grouped.flexible %}
-                <div class="listing-card {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
+                <div class="listing-card tier-flexible {% if listing.is_new %}is-new{% endif %} {% if listing.is_favorite %}is-favorite{% endif %}" data-id="{{ listing.id }}">
                     <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
                         {% if listing.image_url %}
                         <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -680,6 +739,7 @@
                         <span class="new-badge">New</span>
                         {% endif %}
 
+                        <span class="tier-badge flexible">Flexible</span>
                         <div class="title">
                             <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
                             <span class="score-badge">{{ listing.match_score or 0 }}%</span>
@@ -749,7 +809,7 @@
             </div>
             <div class="listings">
                 {% for listing in grouped.excluded %}
-                <div class="listing-card" data-id="{{ listing.id }}">
+                <div class="listing-card tier-excluded" data-id="{{ listing.id }}">
                     <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
                         {% if listing.image_url %}
                         <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -760,9 +820,9 @@
                     </a>
 
                     <div class="card-body">
+                        {% if listing.manual_tier %}<span class="manual-badge">Manual</span>{% endif %}
                         <div class="title">
                             <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
-                            {% if listing.manual_tier %}<span class="manual-badge">Manual</span>{% endif %}
                         </div>
 
                         <div class="price">
