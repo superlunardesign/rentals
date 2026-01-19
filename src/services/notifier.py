@@ -26,13 +26,16 @@ class TelegramNotifier:
             os.environ.get("TELEGRAM_CHAT_ID") or
             (telegram_config.chat_id if telegram_config else None)
         )
-        self.enabled = (
-            telegram_config.enabled if telegram_config else False
-        ) and self.bot_token and self.chat_id
+
+        # Enable if:
+        # 1. Config says enabled=true AND we have credentials, OR
+        # 2. No config but we have credentials from env vars (auto-enable)
+        config_enabled = telegram_config.enabled if telegram_config else True  # Default true if no config
+        self.enabled = config_enabled and bool(self.bot_token) and bool(self.chat_id)
 
         # Which tiers to notify about
         self.notify_tiers = (
-            telegram_config.notify_tiers if telegram_config else ["BEST_MATCH", "MATCH"]
+            telegram_config.notify_tiers if telegram_config else ["BEST_MATCH", "MATCH", "FLEXIBLE"]
         )
 
         if self.enabled:

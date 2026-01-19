@@ -48,6 +48,10 @@ class BrowserScraper(BaseScraper):
             try:
                 print(f"[{self.source_name}] Importing Playwright...")
                 from playwright.async_api import async_playwright
+
+                # Check if browsers need to be installed (Render free tier doesn't persist build cache)
+                await self._ensure_browsers_installed()
+
                 print(f"[{self.source_name}] Starting Playwright...")
                 self._playwright = await async_playwright().start()
                 # Try Firefox first (fewer system deps), fall back to Chromium
@@ -67,6 +71,31 @@ class BrowserScraper(BaseScraper):
                 traceback.print_exc()
                 raise
         return self._browser
+
+    async def _ensure_browsers_installed(self):
+        """Install Playwright browsers if not present (needed for Render free tier)."""
+        import subprocess
+
+        browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/render/.cache/ms-playwright")
+
+        # Check if Firefox exists
+        firefox_path = os.path.join(browsers_path, "firefox-1497", "firefox", "firefox")
+        if not os.path.exists(firefox_path):
+            print(f"[{self.source_name}] Browsers not found, installing at runtime...")
+            try:
+                # Install Firefox
+                result = subprocess.run(
+                    ["playwright", "install", "firefox"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                if result.returncode == 0:
+                    print(f"[{self.source_name}] Firefox installed successfully")
+                else:
+                    print(f"[{self.source_name}] Firefox install warning: {result.stderr}")
+            except Exception as e:
+                print(f"[{self.source_name}] Browser install failed: {e}")
 
     async def _fetch_page_async(self, url: str) -> str:
         """Fetch a page using Playwright browser asynchronously."""
