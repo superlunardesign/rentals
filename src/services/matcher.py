@@ -65,6 +65,15 @@ class MatchingService:
                 reasons=[f"City not in allowed list: {listing.city}"]
             )
 
+        # Exclude 1-bedroom listings - need at least 2 bedrooms
+        if listing.bedrooms is not None and listing.bedrooms < 2:
+            return MatchResult(
+                tier=MatchTier.EXCLUDED,
+                score=0,
+                matched_keywords=[],
+                reasons=[f"Only {listing.bedrooms} bedroom (need 2+)"]
+            )
+
         # Get all the checks
         budget_status = self._check_budget(listing)
         rooms_status = self._check_rooms(listing)
@@ -204,6 +213,7 @@ class MatchingService:
             "reasons": [],
             "meets_minimum": True,
             "meets_best_match": False,
+            "has_bonus_room": False,
             "bedrooms": listing.bedrooms,
             "sqft": listing.sqft,
         }
@@ -212,7 +222,18 @@ class MatchingService:
         best_beds = self.config.rooms.best_match_bedrooms  # 3
         best_sqft = self.config.rooms.best_match_sqft  # 1500
 
-        # Check bedrooms
+        # Check for bonus room keywords (office, bonus room, basement, attic, den, etc.)
+        # These make a 2-bedroom effectively a 3-room home
+        bonus_keywords = ["office", "bonus room", "bonus", "basement", "attic", "den", "flex room", "flex space"]
+        text = f"{listing.title or ''} {listing.description or ''} {listing.features or ''}".lower()
+        for kw in bonus_keywords:
+            if kw in text:
+                result["has_bonus_room"] = True
+                result["reasons"].append(f"Has {kw}")
+                result["score"] += 10
+                break
+
+        # Check bedrooms - 1 bedroom is excluded (handled in match_listing)
         if listing.bedrooms is not None:
             if listing.bedrooms >= best_beds:
                 result["score"] += 15
@@ -220,6 +241,9 @@ class MatchingService:
             elif listing.bedrooms >= min_beds:
                 result["score"] += 5
                 result["reasons"].append(f"{listing.bedrooms} bedrooms")
+                # 2-bedroom with bonus room gets extra boost
+                if result["has_bonus_room"]:
+                    result["score"] += 5
             else:
                 result["score"] -= 10
                 result["reasons"].append(f"Only {listing.bedrooms} bedrooms (need {min_beds}+)")
@@ -246,9 +270,13 @@ class MatchingService:
                 result["meets_minimum"] = False
 
         # Check if meets best match criteria
+        # 3+ beds with good sqft, OR 2 beds with bonus room and good sqft
         beds_ok = listing.bedrooms is not None and listing.bedrooms >= best_beds
+        beds_with_bonus_ok = (listing.bedrooms is not None and
+                              listing.bedrooms >= min_beds and
+                              result["has_bonus_room"])
         sqft_ok = listing.sqft is not None and listing.sqft >= best_sqft
-        result["meets_best_match"] = beds_ok and sqft_ok
+        result["meets_best_match"] = (beds_ok or beds_with_bonus_ok) and sqft_ok
 
         return result
 
