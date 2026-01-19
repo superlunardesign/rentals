@@ -31,6 +31,7 @@ async def dashboard(
     request: Request,
     tier: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
     min_beds: Optional[int] = Query(None),
     max_rent: Optional[int] = Query(None),
     show_inactive: bool = Query(False),
@@ -56,6 +57,10 @@ async def dashboard(
     # Filter by source
     if source:
         query = query.filter(Listing.source_name == source)
+
+    # Filter by city
+    if city:
+        query = query.filter(Listing.city == city)
 
     # Filter by bedrooms
     if min_beds:

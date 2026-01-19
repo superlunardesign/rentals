@@ -346,6 +346,13 @@
                 {% endfor %}
             </select>
 
+            <select name="city">
+                <option value="">All Cities</option>
+                <option value="Tumwater" {% if filters.city == 'Tumwater' %}selected{% endif %}>Tumwater</option>
+                <option value="Olympia" {% if filters.city == 'Olympia' %}selected{% endif %}>Olympia</option>
+                <option value="Lacey" {% if filters.city == 'Lacey' %}selected{% endif %}>Lacey</option>
+            </select>
+
             <input type="number" name="min_beds" placeholder="Min beds" value="{{ filters.min_beds or '' }}" style="width: 100px;">
             <input type="number" name="max_rent" placeholder="Max rent" value="{{ filters.max_rent or '' }}" style="width: 100px;">
 

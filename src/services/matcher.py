@@ -289,12 +289,14 @@ class MatchingService:
         if rooms_status.get("sqft") is not None and rooms_status["sqft"] < self.config.rooms.min_sqft:
             return MatchTier.EXCLUDED
 
+        # Lacey listings are always FLEXIBLE tier (user preference)
+        if listing.city and listing.city.lower() == "lacey":
+            return MatchTier.FLEXIBLE
+
         # BEST MATCH: Perfect listing
         # Must be within budget, meet best match room criteria, and have keywords
-        # Lacey listings are always a tier below (not best match)
-        is_lacey = listing.city and listing.city.lower() == "lacey"
         if budget_status == "within":
-            if rooms_status["meets_best_match"] and len(keywords) >= 1 and not is_lacey:
+            if rooms_status["meets_best_match"] and len(keywords) >= 1:
                 return MatchTier.BEST_MATCH
 
         # MATCH: Close match
