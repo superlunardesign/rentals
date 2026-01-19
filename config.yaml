@@ -136,3 +136,4 @@ notifications:
     notify_tiers:
       - BEST_MATCH
       - MATCH
+      - FLEXIBLE
