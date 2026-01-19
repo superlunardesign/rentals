@@ -85,28 +85,42 @@ class SimplyHomeScraper(BrowserScraper):
                         }
                     }
 
-                    // Method 2: Count tables in specific container
+                    // Method 2: Check how many gotoDetail functions actually exist
+                    let maxValid = 0;
+                    for (let i = 0; i < 200; i++) {
+                        try {
+                            if (typeof pw_listing_widget !== 'undefined' &&
+                                pw_listing_widget.listingData &&
+                                pw_listing_widget.listingData[i]) {
+                                maxValid = i + 1;
+                            }
+                        } catch (e) {
+                            break;
+                        }
+                    }
+                    if (maxValid > 0) {
+                        info.method = 'pw_listing_widget.listingData iteration';
+                        info.count = maxValid;
+                        return info;
+                    }
+
+                    // Method 3: Count listing cards/images (one per listing)
+                    const listImages = document.querySelectorAll('#pw_listing_widget_tabs_list img.listPhoto');
+                    info.debug.list_images = listImages.length;
+                    if (listImages.length > 0) {
+                        info.method = 'list images';
+                        info.count = listImages.length;
+                        return info;
+                    }
+
+                    // Method 4: Fallback - count tables but divide by likely tables-per-listing
                     let tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
                     info.debug.tables_in_list_container = tables.length;
                     if (tables.length > 0) {
-                        info.method = '#pw_listing_widget_tabs_list tables';
-                        info.count = tables.length;
+                        info.method = 'tables divided';
+                        info.count = Math.ceil(tables.length / 4);
                         return info;
                     }
-
-                    // Method 3: Count all listTable elements
-                    tables = document.querySelectorAll('table.listTable');
-                    info.debug.all_list_tables = tables.length;
-                    if (tables.length > 0 && tables.length < 50) {
-                        // Only use if reasonable count
-                        info.method = 'all table.listTable';
-                        info.count = tables.length;
-                        return info;
-                    }
-
-                    // Method 4: Count listing items by common patterns
-                    const listingItems = document.querySelectorAll('.listing-item, [class*="listing"], [id*="listing"]');
-                    info.debug.listing_items = listingItems.length;
 
                     return info;
                 }

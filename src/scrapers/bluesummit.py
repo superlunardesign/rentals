@@ -1,78 +1,74 @@
 """Scraper for Blue Summit Realty property listings.
 
-Custom website with clean HTML structure - all data in listing cards.
+Uses Playwright browser because the site has bot protection (403 on direct HTTP).
 """
 
 import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
-from .base import BaseScraper, ScrapedListing
+from .base import ScrapedListing
+from .browser_scraper import BrowserScraper
 
 
-class BlueSummitScraper(BaseScraper):
-    """Scraper for bluesummitrealty.com rentals."""
+class BlueSummitScraper(BrowserScraper):
+    """Scraper for bluesummitrealty.com rentals using browser."""
 
     def __init__(self, url: str = "https://www.bluesummitrealty.com/property-management/"):
         super().__init__(source_name="bluesummit", base_url=url)
-        # Add referer header to avoid 403
-        self.client.headers["Referer"] = "https://www.bluesummitrealty.com/"
-        self.client.headers["Origin"] = "https://www.bluesummitrealty.com"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all rental listings from Blue Summit Realty."""
         listings = []
-        page_num = 1
 
-        while True:
-            # Build URL for current page
-            if page_num == 1:
-                url = self.base_url
-            else:
-                url = f"{self.base_url}?p={page_num}"
+        try:
+            print(f"[{self.source_name}] Fetching page (browser mode)...")
+            listings = self._run_async(self._scrape_with_browser())
+            print(f"[{self.source_name}] Total: {len(listings)} listings")
 
-            print(f"[{self.source_name}] Fetching page {page_num}: {url}")
+        except Exception as e:
+            print(f"[{self.source_name}] Error scraping: {e}")
+            import traceback
+            traceback.print_exc()
 
-            try:
-                response = self.client.get(url)
-                response.raise_for_status()
-            except Exception as e:
-                print(f"[{self.source_name}] Error fetching page {page_num}: {e}")
-                break
+        return listings
 
-            soup = BeautifulSoup(response.text, "lxml")
+    async def _scrape_with_browser(self) -> list[ScrapedListing]:
+        """Scrape using Playwright browser."""
+        listings = []
+
+        browser = await self._get_browser_async()
+        page = await browser.new_page()
+
+        try:
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+
+            print(f"[{self.source_name}] Loading page...")
+            await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(2000)  # Wait for JS to render
+
+            # Get page content
+            html = await page.content()
+            soup = BeautifulSoup(html, "lxml")
 
             # Find all listing cards
             cards = soup.select("a.teaser__card")
-
-            if not cards:
-                print(f"[{self.source_name}] No listings found on page {page_num}")
-                break
-
-            print(f"[{self.source_name}] Found {len(cards)} listings on page {page_num}")
+            print(f"[{self.source_name}] Found {len(cards)} listing cards")
 
             for card in cards:
                 listing = self._parse_card(card)
                 if listing:
                     listings.append(listing)
+                    print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
 
-            # Check for next page
-            next_link = soup.select_one('a.button:contains("Next")')
-            if not next_link:
-                # Also check by href pattern
-                next_link = soup.select_one(f'a[href*="?p={page_num + 1}"]')
+        except Exception as e:
+            print(f"[{self.source_name}] Error in browser scraping: {e}")
+            import traceback
+            traceback.print_exc()
 
-            if not next_link:
-                break
+        finally:
+            await page.close()
 
-            page_num += 1
-
-            # Safety limit
-            if page_num > 10:
-                print(f"[{self.source_name}] Reached page limit")
-                break
-
-        print(f"[{self.source_name}] Total: {len(listings)} listings")
         return listings
 
     def _parse_card(self, card) -> ScrapedListing | None:
@@ -96,10 +92,9 @@ class BlueSummitScraper(BaseScraper):
             address_el = card.select_one(".teaser__address")
             address = address_el.get_text(strip=True) if address_el else None
 
-            # Parse city from address (format: "123 Street, City")
+            # Parse city from address
             city, state, zip_code = None, "WA", None
             if address:
-                # Check for known cities
                 city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis)', address, re.I)
                 if city_match:
                     city = city_match.group(1).title()
@@ -137,7 +132,6 @@ class BlueSummitScraper(BaseScraper):
             # Generate source ID from URL
             source_id = None
             if url:
-                # Extract slug from URL like /listing/cms/5424-93rd-ave-se/
                 slug_match = re.search(r'/listing/cms/([^/]+)/?', url)
                 if slug_match:
                     source_id = f"bluesummit_{slug_match.group(1)}"
