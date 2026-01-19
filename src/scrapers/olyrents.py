@@ -1,6 +1,7 @@
 """Scraper for Olympic Landlord & Rental Services (olyrents.com).
 
 Uses Playwright browser to render PropertyWare JavaScript content.
+Clicks through each listing detail view for complete data.
 """
 
 import re
@@ -16,235 +17,198 @@ class OlyrentsScraper(BrowserScraper):
     """Scraper for olyrents.com property listings via PropertyWare widget.
 
     Uses browser rendering because PropertyWare loads listing content via JavaScript.
+    Navigates through detail views to get complete listing data.
     """
 
     def __init__(self, url: str = "https://olyrents.propertyware.com/"):
         super().__init__(source_name="olyrents", base_url=url)
 
     def scrape(self) -> list[ScrapedListing]:
-        """Scrape all listings from olyrents PropertyWare widget."""
+        """Scrape all listings by clicking through detail views."""
         listings = []
 
         try:
-            print(f"[olyrents] Fetching PropertyWare widget (browser mode)...")
-            soup = self.fetch_page(self.base_url)
+            print(f"[{self.source_name}] Fetching PropertyWare widget (browser mode)...")
 
-            print(f"[olyrents] Page title: {soup.title.string if soup.title else 'No title'}")
+            # Use the detail view scraping method
+            listings = self._run_async(self._scrape_with_detail_views())
 
-            # Find all listing tables
-            listing_tables = soup.select("table.listTable")
-            print(f"[olyrents] Found {len(listing_tables)} listing tables")
-
-            # Debug: check if there are any tables at all
-            if not listing_tables:
-                # Try other selectors
-                all_tables = soup.select("table")
-                print(f"[olyrents] Total tables on page: {len(all_tables)}")
-                # Look for PropertyWare-specific classes
-                pw_items = soup.select("[class*='pw_listing'], [class*='listing-item'], [class*='property']")
-                print(f"[olyrents] PropertyWare items found: {len(pw_items)}")
-
-            debug_count = 0
-            for table in listing_tables:
-                # Debug first 3 tables
-                if debug_count < 3:
-                    table_text = table.get_text(strip=True)[:200]
-                    all_tds = table.select("td")
-                    td_classes = []
-                    for td in all_tds:
-                        if td.get("class"):
-                            td_classes.extend(td.get("class"))
-                    print(f"[olyrents] Table {debug_count} TD classes: {set(td_classes)}")
-                    print(f"[olyrents] Table {debug_count} text preview: {table_text[:100]}...")
-                    debug_count += 1
-
-                listing = self._parse_listing(table)
-                if listing:
-                    listings.append(listing)
-                    print(f"[olyrents] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-
-            print(f"[olyrents] Found {len(listings)} listings")
+            print(f"[{self.source_name}] Found {len(listings)} listings")
 
         except Exception as e:
-            print(f"[olyrents] Error scraping: {e}")
+            print(f"[{self.source_name}] Error scraping: {e}")
             import traceback
             traceback.print_exc()
 
         return listings
 
-    def _parse_listing(self, table: Tag) -> Optional[ScrapedListing]:
-        """Parse a single PropertyWare listing table."""
+    async def _scrape_with_detail_views(self) -> list[ScrapedListing]:
+        """Navigate through each listing's detail view to extract complete data."""
+        listings = []
+
+        browser = await self._get_browser_async()
+        page = await browser.new_page()
+
         try:
-            image_url = None
-            detail_url = None
-            title = None
-            address = None
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+
+            print(f"[{self.source_name}] Loading page...")
+            await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(3000)  # Wait for JS to render
+
+            # Count how many listings are available
+            listing_count = await page.evaluate("""
+                () => {
+                    const tables = document.querySelectorAll('table.listTable');
+                    return tables.length;
+                }
+            """)
+            print(f"[{self.source_name}] Found {listing_count} listing tables")
+
+            if listing_count == 0:
+                return listings
+
+            # Click on first listing to enter detail view
+            print(f"[{self.source_name}] Clicking first listing...")
+            await page.evaluate("gotoDetail(0)")
+            await page.wait_for_timeout(2000)
+
+            # Loop through all listings using Next button
+            for i in range(listing_count):
+                try:
+                    # Wait for detail view to load
+                    await page.wait_for_selector("#pw_listing_widget_tabs_detail_address", timeout=5000)
+
+                    # Get the page content
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "lxml")
+
+                    # Extract listing from detail view
+                    listing = self._parse_detail_view(soup, i)
+                    if listing:
+                        listings.append(listing)
+                        print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+
+                    # Click Next to go to next listing (if not last)
+                    if i < listing_count - 1:
+                        await page.evaluate("gotoNextBuilding()")
+                        await page.wait_for_timeout(1500)
+
+                except Exception as e:
+                    print(f"[{self.source_name}] Error on listing {i}: {e}")
+                    continue
+
+        except Exception as e:
+            print(f"[{self.source_name}] Error in detail scraping: {e}")
+            import traceback
+            traceback.print_exc()
+
+        finally:
+            await page.close()
+
+        return listings
+
+    def _parse_detail_view(self, soup: BeautifulSoup, index: int) -> Optional[ScrapedListing]:
+        """Parse listing data from the PropertyWare detail view."""
+        try:
+            # Address - the key field!
+            address_el = soup.select_one("#pw_listing_widget_tabs_detail_address")
+            address = address_el.get_text(strip=True) if address_el else None
+
+            # Price
+            price_el = soup.select_one("#pw_listing_widget_tabs_detail_price")
             rent = None
-            bedrooms = None
-            bathrooms = None
-            sqft = None
-            description = None
-
-            # Extract image
-            img = table.select_one(".listItemImgTd img, .pw_listing_widget_tabs_list_item_img")
-            if img:
-                image_url = img.get("src")
-
-            # Debug: show table structure (first table only)
-            all_tds = table.select("td")
-            all_classes = set()
-            for td in all_tds:
-                if td.get("class"):
-                    all_classes.update(td.get("class"))
-
-            # Try multiple selectors for description cell
-            desc_td = table.select_one(".listItemDescTd")
-            if not desc_td:
-                # Try alternate selectors
-                desc_td = table.select_one("td.listItemDescTd")
-            if not desc_td:
-                # Try the second td (first is usually image)
-                if len(all_tds) >= 2:
-                    second_td = all_tds[1]
-                    text = second_td.get_text(strip=True)
-                    # Check if it has listing-like content
-                    if text and len(text) > 30:
-                        desc_td = second_td
-            if not desc_td:
-                # Try any td with listing-like content
-                for td in all_tds:
-                    text = td.get_text(strip=True)
-                    # Look for money amounts, bedroom counts, or address-like patterns
-                    if text and len(text) > 30 and (
-                        "$" in text or
-                        "BR" in text or
-                        "bed" in text.lower() or
-                        re.search(r'\d+\s+\w+\s+(St|Ave|Rd|Dr|Way|Ln|Ct|Blvd)', text, re.I) or
-                        "WA" in text
-                    ):
-                        desc_td = td
-                        break
-
-            # If no desc_td found, try parsing the whole table
-            parse_target = desc_td if desc_td else table
-
-            # Title is in the first <a> tag
-            title_link = parse_target.select_one("a")
-            if title_link:
-                title = self.clean_text(title_link.get_text())
-                # Extract detail index from javascript:gotoDetail(X)
-                href = title_link.get("href", "")
-                detail_match = re.search(r'gotoDetail\((\d+)\)', href)
-                if detail_match:
-                    detail_url = f"{self.base_url}#listing_{detail_match.group(1)}"
-
-            # Get all text from parse target for regex extraction
-            full_text = parse_target.get_text()
-
-            # Address patterns
-            addr_match = re.search(r'(\d+[^,]+,\s*\w+,\s*WA\s*\d{5}(?:-\d{4})?)', full_text)
-            if addr_match:
-                address = self.clean_text(addr_match.group(1))
-            else:
-                # Try simpler address pattern
-                addr_match = re.search(r'(\d+\s+[A-Za-z\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Way|Blvd|Ln|Lane|Ct|Court)[^,\n]*)', full_text, re.I)
-                if addr_match:
-                    address = self.clean_text(addr_match.group(1))
-
-            # Extract specs - try multiple patterns
-            # Monthly Rent
-            rent_match = re.search(r'(?:Monthly Rent|Rent):\s*\$?([\d,]+)', full_text, re.I)
-            if rent_match:
-                rent = int(rent_match.group(1).replace(',', '').split('.')[0])
-            else:
-                # Try just finding a dollar amount
-                rent_match = re.search(r'\$\s*([\d,]+)(?:\s*/\s*(?:mo|month))?', full_text, re.I)
+            if price_el:
+                price_text = price_el.get_text(strip=True)
+                rent_match = re.search(r'\$?([\d,]+)', price_text)
                 if rent_match:
                     rent = int(rent_match.group(1).replace(',', ''))
 
             # Bedrooms
-            br_match = re.search(r'(?:BR|Bed|Bedroom)s?:\s*(\d+)', full_text, re.I)
-            if br_match:
-                bedrooms = int(br_match.group(1))
-            else:
-                br_match = re.search(r'(\d+)\s*(?:BR|Bed|Bedroom)s?', full_text, re.I)
-                if br_match:
-                    bedrooms = int(br_match.group(1))
+            bed_el = soup.select_one("#pw_listing_widget_tabs_detail_bed")
+            bedrooms = int(bed_el.get_text(strip=True)) if bed_el else None
 
             # Bathrooms
-            ba_match = re.search(r'(?:BA|Bath|Bathroom)s?:\s*(\d+\.?\d*)', full_text, re.I)
-            if ba_match:
-                bathrooms = float(ba_match.group(1))
-            else:
-                ba_match = re.search(r'(\d+\.?\d*)\s*(?:BA|Bath|Bathroom)s?', full_text, re.I)
-                if ba_match:
-                    bathrooms = float(ba_match.group(1))
+            bath_el = soup.select_one("#pw_listing_widget_tabs_detail_bath")
+            bathrooms = float(bath_el.get_text(strip=True)) if bath_el else None
 
-            # Description is in <p> tag
-            desc_p = parse_target.select_one("p")
-            if desc_p:
-                description = self.clean_text(desc_p.get_text())
+            # Square footage
+            area_el = soup.select_one("#pw_listing_widget_tabs_detail_area")
+            sqft = None
+            if area_el:
+                area_text = area_el.get_text(strip=True).replace(',', '')
+                area_match = re.search(r'([\d.]+)', area_text)
+                if area_match:
+                    sqft = int(float(area_match.group(1)))
 
-            # Try to extract sqft from full text
-            sqft_text = full_text
-            sqft_match = re.search(r'([\d,]+)\s*sq\.?\s*ft', sqft_text, re.I)
-            if sqft_match:
-                sqft = int(sqft_match.group(1).replace(',', ''))
+            # Property type
+            type_el = soup.select_one("#pw_listing_widget_tabs_detail_type")
+            prop_type = type_el.get_text(strip=True) if type_el else None
 
-            if not title and not address:
-                # Debug: show why we're skipping this table
-                text_preview = full_text[:150].replace('\n', ' ').strip()
-                print(f"[olyrents] SKIP: no title/address. Text: {text_preview}...")
-                return None
+            # Description
+            desc_el = soup.select_one("#pw_listing_widget_tabs_detail_description_p")
+            description = desc_el.get_text(strip=True) if desc_el else None
 
-            # Extract city/state/zip from address
-            city = None
-            state = None
-            zip_code = None
+            # Image
+            img_el = soup.select_one("#pw_listing_widget_tabs_detail_image")
+            image_url = img_el.get("src") if img_el else None
+
+            # Deposit
+            deposit_el = soup.select_one("#pw_listing_widget_tabs_detail_deposit")
+            deposit = None
+            if deposit_el:
+                dep_match = re.search(r'\$?([\d,]+)', deposit_el.get_text())
+                if dep_match:
+                    deposit = int(dep_match.group(1).replace(',', ''))
+
+            # Amenities
+            amenities_el = soup.select_one("#pw_listing_widget_tabs_detail_description_amenities_ul")
+            features = []
+            if amenities_el:
+                for li in amenities_el.select("li"):
+                    features.append(li.get_text(strip=True))
+
+            # Add property type to features
+            if prop_type:
+                features.insert(0, prop_type.lower())
+
+            # Parse city/state/zip from address
+            city, state, zip_code = None, None, None
             if address:
-                zip_code = self.extract_zip_code(address)
-                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis)', address, re.I)
+                zip_match = re.search(r'(\d{5})(?:-\d{4})?', address)
+                if zip_match:
+                    zip_code = zip_match.group(1)
+
+                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Shelton)', address, re.I)
                 if city_match:
                     city = city_match.group(1).title()
                     state = "WA"
 
-            # Generate source ID from address or title
-            source_id = None
-            if address:
-                # Use address hash as ID since PropertyWare doesn't expose IDs
-                source_id = str(abs(hash(address)))[:12]
-            else:
-                source_id = str(abs(hash(title or str(rent))))[:12]
+            # Generate source ID
+            source_id = f"olyrents_{index}_{abs(hash(address or str(rent)))}"[:20]
+
+            if not address and not rent:
+                return None
 
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=detail_url or self.base_url,
-                title=title or address or f"OlyRents Property",
+                url=self.base_url,
+                title=address or f"OlyRents Property #{index}",
                 address=address,
-                city=city,  # Don't default - let matcher filter unknown cities
+                city=city,
                 state=state or "WA",
                 zip_code=zip_code,
                 rent=rent,
+                deposit=deposit,
                 bedrooms=bedrooms,
                 bathrooms=bathrooms,
                 sqft=sqft,
                 description=description,
+                features=features,
                 image_url=image_url,
             )
 
         except Exception as e:
-            print(f"[olyrents] Error parsing listing: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[{self.source_name}] Error parsing detail view: {e}")
             return None
-
-    def scrape_detail_page(self, url: str) -> dict:
-        """PropertyWare widget doesn't have separate detail pages."""
-        return {
-            "bedrooms": None,
-            "bathrooms": None,
-            "sqft": None,
-            "description": None,
-            "features": [],
-        }
