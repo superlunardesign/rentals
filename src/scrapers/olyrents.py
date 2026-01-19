@@ -1,6 +1,6 @@
 """Scraper for Olympic Landlord & Rental Services (olyrents.com).
 
-Uses the PropertyWare widget directly instead of the JavaScript-rendered site.
+Uses Playwright browser to render PropertyWare JavaScript content.
 """
 
 import re
@@ -8,11 +8,15 @@ from typing import Optional
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
 
-from .base import BaseScraper, ScrapedListing
+from .base import ScrapedListing
+from .browser_scraper import BrowserScraper
 
 
-class OlyrentsScraper(BaseScraper):
-    """Scraper for olyrents.com property listings via PropertyWare widget."""
+class OlyrentsScraper(BrowserScraper):
+    """Scraper for olyrents.com property listings via PropertyWare widget.
+
+    Uses browser rendering because PropertyWare loads listing content via JavaScript.
+    """
 
     def __init__(self, url: str = "https://olyrents.propertyware.com/"):
         super().__init__(source_name="olyrents", base_url=url)
@@ -22,7 +26,7 @@ class OlyrentsScraper(BaseScraper):
         listings = []
 
         try:
-            print(f"[olyrents] Fetching PropertyWare widget...")
+            print(f"[olyrents] Fetching PropertyWare widget (browser mode)...")
             soup = self.fetch_page(self.base_url)
 
             print(f"[olyrents] Page title: {soup.title.string if soup.title else 'No title'}")

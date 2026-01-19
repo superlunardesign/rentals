@@ -123,6 +123,43 @@ class BrowserScraper(BaseScraper):
         return None
 
     @staticmethod
+    def parse_bedrooms(text: str) -> Optional[int]:
+        """Extract bedroom count from text like '3 bed', '3BR', etc."""
+        if not text:
+            return None
+        match = re.search(r'(\d+)\s*(?:bed|br|bedroom)', text.lower())
+        if match:
+            return int(match.group(1))
+        match = re.search(r'(\d+)', text)
+        if match:
+            return int(match.group(1))
+        return None
+
+    @staticmethod
+    def parse_bathrooms(text: str) -> Optional[float]:
+        """Extract bathroom count from text like '2 bath', '1.5 BA', etc."""
+        if not text:
+            return None
+        match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba|bathroom)', text.lower())
+        if match:
+            return float(match.group(1))
+        match = re.search(r'(\d+\.?\d*)', text)
+        if match:
+            return float(match.group(1))
+        return None
+
+    @staticmethod
+    def parse_sqft(text: str) -> Optional[int]:
+        """Extract square footage from text like '1,200 sqft', '1200 sq ft', etc."""
+        if not text:
+            return None
+        cleaned = text.replace(',', '')
+        match = re.search(r'(\d+)\s*(?:sq\.?\s*ft|sqft|sf)', cleaned.lower())
+        if match:
+            return int(match.group(1))
+        return None
+
+    @staticmethod
     def clean_text(text: str) -> str:
         """Clean up scraped text."""
         if not text:

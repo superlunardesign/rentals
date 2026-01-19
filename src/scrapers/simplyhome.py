@@ -1,6 +1,6 @@
 """Scraper for Simply Home Realty LLC.
 
-Uses PropertyWare listings at simplyhomerealtyllc.propertyware.com.
+Uses Playwright browser to render PropertyWare JavaScript content.
 """
 
 import re
@@ -8,11 +8,15 @@ from typing import Optional
 from urllib.parse import urljoin
 from bs4 import Tag
 
-from .base import BaseScraper, ScrapedListing
+from .base import ScrapedListing
+from .browser_scraper import BrowserScraper
 
 
-class SimplyHomeScraper(BaseScraper):
-    """Scraper for Simply Home Realty via PropertyWare."""
+class SimplyHomeScraper(BrowserScraper):
+    """Scraper for Simply Home Realty via PropertyWare.
+
+    Uses browser rendering because PropertyWare loads listing content via JavaScript.
+    """
 
     def __init__(self, url: str = "https://simplyhomerealtyllc.propertyware.com/rentals.html"):
         super().__init__(source_name="simplyhome", base_url=url)
@@ -22,7 +26,7 @@ class SimplyHomeScraper(BaseScraper):
         listings = []
 
         try:
-            print(f"[simplyhome] Fetching PropertyWare widget...")
+            print(f"[simplyhome] Fetching PropertyWare widget (browser mode)...")
             soup = self.fetch_page(self.base_url)
 
             print(f"[simplyhome] Page title: {soup.title.string if soup.title else 'No title'}")
