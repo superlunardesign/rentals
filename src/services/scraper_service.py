@@ -60,16 +60,45 @@ class ScraperService:
                 print(f"[scraper] Initializing {source.scraper} scraper...")
                 with scraper_class(source.url) as scraper:
                     print(f"[scraper] Scraper initialized, starting scrape...")
+
+                    # For scrapers that support incremental saving (PropertyWare)
+                    incremental_results = {"found_ids": set(), "new": 0, "updated": 0, "new_listing_objects": []}
+                    if hasattr(scraper, 'set_on_listing_callback'):
+                        def on_listing(scraped):
+                            """Save each listing immediately as it's parsed."""
+                            result = self._process_single_listing(scraped, scraper.source_name)
+                            if result:
+                                incremental_results["found_ids"].add(result["source_id"])
+                                if result["is_new"]:
+                                    incremental_results["new"] += 1
+                                    if result.get("listing"):
+                                        incremental_results["new_listing_objects"].append(result["listing"])
+                                        # Send notification immediately for new listing
+                                        self.notifier.notify_new_listings([result["listing"]])
+                                else:
+                                    incremental_results["updated"] += 1
+
+                        scraper.set_on_listing_callback(on_listing)
+
                     listings = scraper.scrape()
 
-                    # Pass scraper to process_listings so it can fetch detail pages
-                    # Don't remove stale yet - we'll do that after all sources are done
-                    source_results = self._process_listings(
-                        listings,
-                        scraper=scraper,
-                        source_name=scraper.source_name,
-                        remove_stale=False
-                    )
+                    # If we used incremental saving, use those results
+                    if hasattr(scraper, 'set_on_listing_callback') and incremental_results["found_ids"]:
+                        source_results = {
+                            "found": len(incremental_results["found_ids"]),
+                            "new": incremental_results["new"],
+                            "updated": incremental_results["updated"],
+                            "found_ids": incremental_results["found_ids"],
+                            "new_listing_objects": [],  # Already notified incrementally
+                        }
+                    else:
+                        # Regular batch processing for other scrapers
+                        source_results = self._process_listings(
+                            listings,
+                            scraper=scraper,
+                            source_name=scraper.source_name,
+                            remove_stale=False
+                        )
 
                     # Accumulate found IDs for this source_name
                     if scraper.source_name not in all_found_ids_by_source:
@@ -133,6 +162,29 @@ class ScraperService:
             session.commit()
 
         return removed
+
+    def _process_single_listing(self, scraped: ScrapedListing, source_name: str) -> Optional[dict]:
+        """Process and save a single listing immediately. Used for incremental saving."""
+        try:
+            source_id = scraped.source_id or scraped.generate_id()
+
+            with SessionLocal() as session:
+                existing = self._find_existing(session, scraped)
+
+                if existing:
+                    self._update_listing(existing, scraped)
+                    session.commit()
+                    return {"source_id": source_id, "is_new": False, "listing": None}
+                else:
+                    listing = self._create_listing(scraped)
+                    session.add(listing)
+                    session.commit()
+                    session.refresh(listing)
+                    return {"source_id": source_id, "is_new": True, "listing": listing}
+
+        except Exception as e:
+            print(f"[scraper] Error saving listing: {e}")
+            return None
 
     def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None, source_name: str = None, remove_stale: bool = True) -> dict:
         """Process scraped listings and update database.

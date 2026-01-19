@@ -22,6 +22,11 @@ class SimplyHomeScraper(BrowserScraper):
 
     def __init__(self, url: str = "https://simplyhomerealtyllc.propertyware.com/rentals.html"):
         super().__init__(source_name="simplyhome", base_url=url)
+        self._on_listing_callback = None
+
+    def set_on_listing_callback(self, callback):
+        """Set a callback to be called for each listing as it's parsed."""
+        self._on_listing_callback = callback
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all listings by clicking through detail views."""
@@ -95,6 +100,9 @@ class SimplyHomeScraper(BrowserScraper):
                             if listing:
                                 listings.append(listing)
                                 print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                                # Call callback to save immediately
+                                if self._on_listing_callback:
+                                    self._on_listing_callback(listing)
                             break  # Success, exit retry loop
 
                         except Exception as retry_e:
