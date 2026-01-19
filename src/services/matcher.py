@@ -389,15 +389,26 @@ class MatchingService:
         # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
         text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
         text_lower = text.lower()
-        # Check for property type keywords
-        for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex", "unit "]:
+        # Check for property type keywords (use word boundaries to avoid false matches)
+        for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex"]:
             if prop_type in text_lower:
                 print(f"[matcher] {title_short}: FLEXIBLE (property type: {prop_type})")
                 return MatchTier.FLEXIBLE
-        # Check for unit indicators like "#1", "#2", "Unit A", or trailing "A"/"B" in address
-        unit_match = re.search(r'#\d+|unit\s*[a-z0-9]|\s[ab]\s*$|\s[ab],', text_lower)
+        # Check for unit references that indicate multi-unit or specific unit designation
+        # Match: "unit 1", "unit a", "unit #", "2 unit", "multi-unit", but NOT "laundry unit", "hvac unit", "community"
+        unit_match = re.search(r'\b(?:multi[- ]?unit|\d+[- ]?unit|unit\s*[#]?\s*[a-z0-9])\b', text_lower)
         if unit_match:
-            print(f"[matcher] {title_short}: FLEXIBLE (unit indicator: '{unit_match.group()}')")
+            # Make sure it's not a false positive like "laundry unit", "hvac unit", "ac unit"
+            false_positives = ["laundry unit", "hvac unit", "ac unit", "storage unit", "washer unit", "dryer unit"]
+            matched_text = unit_match.group()
+            is_false_positive = any(fp in text_lower for fp in false_positives)
+            if not is_false_positive:
+                print(f"[matcher] {title_short}: FLEXIBLE (unit indicator: '{matched_text}')")
+                return MatchTier.FLEXIBLE
+        # Check for unit indicators in address like "#1", "#2", or trailing "A"/"B"
+        addr_unit_match = re.search(r'#\d+|\s[ab]\s*$|\s[ab],', text_lower)
+        if addr_unit_match:
+            print(f"[matcher] {title_short}: FLEXIBLE (address unit: '{addr_unit_match.group()}')")
             return MatchTier.FLEXIBLE
 
         # BEST MATCH: Perfect listing
