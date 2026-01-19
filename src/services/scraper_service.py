@@ -241,6 +241,34 @@ class ScraperService:
         # Run matching
         self.matcher.update_listing_match(listing)
 
+        # Log the result
+        tier = listing.match_tier or "unknown"
+        tier_emoji = {
+            "best_match": "🌟",
+            "match": "✅",
+            "flexible": "🔶",
+            "excluded": "❌"
+        }.get(tier, "❓")
+
+        short_title = (listing.title or "Unknown")[:35]
+        reason = ""
+        if tier == "excluded":
+            # Try to identify why
+            if listing.bedrooms and listing.bedrooms < 2:
+                reason = "(1 bed)"
+            elif listing.bathrooms and listing.bathrooms < 2:
+                reason = "(< 2 bath)"
+            elif listing.sqft and listing.sqft < 1200:
+                reason = "(< 1200 sqft)"
+            elif listing.rent and listing.rent > 2800:
+                reason = "(over budget)"
+            elif not listing.city:
+                reason = "(unknown city)"
+            else:
+                reason = "(filtered)"
+
+        print(f"[scraper] {tier_emoji} {tier.upper()}: {short_title}... {reason}")
+
         return listing
 
     def _update_listing(self, listing: Listing, scraped: ScrapedListing):
