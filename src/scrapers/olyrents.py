@@ -72,21 +72,37 @@ class OlyrentsScraper(BrowserScraper):
             for i in range(listing_count):
                 try:
                     print(f"[{self.source_name}] Loading listing {i+1}/{listing_count}...")
+
+                    # Navigate to detail view
                     await page.evaluate(f"gotoDetail({i})")
-                    await page.wait_for_timeout(1500)
 
-                    # Wait for detail view to load
-                    await page.wait_for_selector("#pw_listing_widget_tabs_detail_address", timeout=5000)
+                    # Wait for the detail view to update - watch for address to change
+                    # Use a longer initial wait to let the JS render
+                    await page.wait_for_timeout(2000)
 
-                    # Get the page content
-                    html = await page.content()
-                    soup = BeautifulSoup(html, "lxml")
+                    # Try to get the detail content with retries
+                    for attempt in range(3):
+                        try:
+                            # Wait for address element
+                            await page.wait_for_selector("#pw_listing_widget_tabs_detail_address", timeout=8000, state="visible")
 
-                    # Extract listing from detail view
-                    listing = self._parse_detail_view(soup, i)
-                    if listing:
-                        listings.append(listing)
-                        print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                            # Get the page content
+                            html = await page.content()
+                            soup = BeautifulSoup(html, "lxml")
+
+                            # Extract listing from detail view
+                            listing = self._parse_detail_view(soup, i)
+                            if listing:
+                                listings.append(listing)
+                                print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                            break  # Success, exit retry loop
+
+                        except Exception as retry_e:
+                            if attempt < 2:
+                                print(f"[{self.source_name}] Retry {attempt+1} for listing {i}...")
+                                await page.wait_for_timeout(1000)
+                            else:
+                                raise retry_e
 
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i}: {e}")
