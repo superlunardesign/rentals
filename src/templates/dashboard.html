@@ -466,6 +466,7 @@
 
             <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
             <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
+            <button type="button" class="secondary" onclick="testTelegram()">Test Telegram</button>
         </form>
 
         {% if grouped.favorites %}
@@ -944,6 +945,23 @@
                 window.location.reload();
             } else {
                 alert('Failed to move: ' + data.message);
+            }
+        }
+
+        async function testTelegram() {
+            try {
+                const response = await fetch('/telegram/test', { method: 'POST' });
+                const data = await response.json();
+                let msg = `Telegram Status:\n`;
+                msg += `Enabled: ${data.enabled}\n`;
+                msg += `Bot Token Set: ${data.bot_token_set}\n`;
+                msg += `Chat ID: ${data.chat_id}\n`;
+                msg += `Notify Tiers: ${data.notify_tiers?.join(', ')}\n`;
+                msg += `Test Sent: ${data.test_sent}`;
+                if (data.reason) msg += `\nReason: ${data.reason}`;
+                alert(msg);
+            } catch (e) {
+                alert('Failed to test Telegram: ' + e.message);
             }
         }
     </script>
