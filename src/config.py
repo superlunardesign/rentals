@@ -14,6 +14,7 @@ class LocationConfig(BaseModel):
     longitude: float
     radius_miles: int
     flexible_radius_miles: int
+    allowed_cities: list[str] = []  # If set, only show listings from these cities
 
 
 class BudgetConfig(BaseModel):

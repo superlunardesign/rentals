@@ -56,6 +56,15 @@ class MatchingService:
                 reasons=["Contains dealbreaker keywords"]
             )
 
+        # Check if city is allowed
+        if not self._is_city_allowed(listing):
+            return MatchResult(
+                tier=MatchTier.EXCLUDED,
+                score=0,
+                matched_keywords=[],
+                reasons=[f"City not in allowed list: {listing.city}"]
+            )
+
         # Get all the checks
         budget_status = self._check_budget(listing)
         rooms_status = self._check_rooms(listing)
@@ -102,6 +111,22 @@ class MatchingService:
             if dealbreaker in text:
                 return True
         return False
+
+    def _is_city_allowed(self, listing: Listing) -> bool:
+        """Check if listing's city is in the allowed list."""
+        allowed_cities = self.config.location.allowed_cities
+
+        # If no allowed_cities configured, allow all
+        if not allowed_cities:
+            return True
+
+        # If listing has no city, allow it (will be filtered by distance instead)
+        if not listing.city:
+            return True
+
+        # Case-insensitive match
+        allowed_lower = [c.lower() for c in allowed_cities]
+        return listing.city.lower() in allowed_lower
 
     def _check_budget(self, listing: Listing) -> dict:
         """Check if listing is within budget."""

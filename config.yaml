@@ -10,6 +10,16 @@ location:
   longitude: -122.9093
   radius_miles: 15
   flexible_radius_miles: 20  # "Flexible" tier extends to this
+  # Only show listings from these cities (case-insensitive)
+  allowed_cities:
+    - Tumwater
+    - Olympia
+    - Lacey
+    - Yelm
+    - Rochester
+    - Tenino
+    - Rainier
+    - Bucoda
 
 budget:
   max_rent: 2600  # Your max budget
@@ -49,6 +59,10 @@ keywords:
     - no pets
     - senior living
     - 55+
+    - commercial
+    - retail
+    - office space
+    - warehouse
 
 # Scraper sources - add new property management sites here
 sources:

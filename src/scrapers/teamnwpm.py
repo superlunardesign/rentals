@@ -139,19 +139,17 @@ class TeamNWPMScraper(BaseScraper):
             if not img:
                 img = element.find("img")
             if img:
-                # Check various image attributes (lazy loading may use different attrs)
+                # AppFolio uses data-original for lazy loading - check it first
                 image_url = (
-                    img.get("src") or
+                    img.get("data-original") or
                     img.get("data-src") or
                     img.get("data-lazy-src") or
-                    img.get("data-original") or
+                    img.get("src") or
                     img.get("data-image")
                 )
-                # Debug: show what we found
-                print(f"[teamnwpm] Image found - src={img.get('src')}, data-src={img.get('data-src')}")
                 # Skip placeholder/loading images
-                if image_url and ("placeholder" in image_url.lower() or "loading" in image_url.lower()):
-                    image_url = img.get("data-src") or img.get("data-lazy-src")
+                if image_url and ("placeholder" in image_url.lower() or "loading" in image_url.lower() or "data:image" in image_url.lower()):
+                    image_url = img.get("data-original") or img.get("data-src")
                 if image_url and not image_url.startswith("http"):
                     image_url = urljoin(self.base_url, image_url)
 
