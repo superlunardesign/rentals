@@ -15,6 +15,9 @@ class BlueSummitScraper(BaseScraper):
 
     def __init__(self, url: str = "https://www.bluesummitrealty.com/property-management/"):
         super().__init__(source_name="bluesummit", base_url=url)
+        # Add referer header to avoid 403
+        self.client.headers["Referer"] = "https://www.bluesummitrealty.com/"
+        self.client.headers["Origin"] = "https://www.bluesummitrealty.com"
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all rental listings from Blue Summit Realty."""
