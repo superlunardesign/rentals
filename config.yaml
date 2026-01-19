@@ -15,11 +15,6 @@ location:
     - Tumwater
     - Olympia
     - Lacey
-    - Yelm
-    - Rochester
-    - Tenino
-    - Rainier
-    - Bucoda
 
 budget:
   max_rent: 2600  # Your max budget
