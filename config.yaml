@@ -110,6 +110,11 @@ sources:
     url: "https://simplyhomerealtyllc.propertyware.com/rentals.html"
     enabled: true
 
+  - name: "Capitol Property Management"
+    scraper: "capitol_pm"
+    url: "https://capitol-pm.managebuilding.com/Resident/Public/Rentals"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1

@@ -8,6 +8,7 @@ from .kenzie import KenzieScraper
 from .greene import GreeneScraper
 from .windermere import WindermereScraper
 from .simplyhome import SimplyHomeScraper
+from .capitol_pm import CapitolPMScraper
 
 SCRAPERS = {
     "olyrents": OlyrentsScraper,
@@ -19,6 +20,7 @@ SCRAPERS = {
     "greene": GreeneScraper,
     "windermere": WindermereScraper,
     "simplyhome": SimplyHomeScraper,
+    "capitol_pm": CapitolPMScraper,
 }
 
 __all__ = [
@@ -33,5 +35,6 @@ __all__ = [
     "GreeneScraper",
     "WindermereScraper",
     "SimplyHomeScraper",
+    "CapitolPMScraper",
     "SCRAPERS",
 ]
