@@ -95,9 +95,7 @@ class GreeneScraper(BaseScraper):
                 if "$" in text and not rent:
                     rent = self.parse_rent(text)
                 elif "sq" in text.lower() or "ft" in text.lower():
-                    sqft_match = re.search(r'([\d,]+)', text)
-                    if sqft_match:
-                        sqft = int(sqft_match.group(1).replace(',', ''))
+                    sqft = self.parse_sqft(text)
                 elif re.search(r'\d+\s*(bed|br|bd)', text.lower()):
                     bed_match = re.search(r'(\d+)', text)
                     if bed_match:
@@ -108,22 +106,19 @@ class GreeneScraper(BaseScraper):
                         bathrooms = float(bath_match.group(1))
 
             # Fallback: try regex on all text
-            if not rent or not bedrooms:
-                all_text = element.get_text()
-                if not rent:
-                    rent = self.parse_rent(all_text)
-                if not bedrooms:
-                    bed_match = re.search(r'(\d+)\s*(?:bed|br)', all_text, re.I)
-                    if bed_match:
-                        bedrooms = int(bed_match.group(1))
-                if not bathrooms:
-                    bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba)', all_text, re.I)
-                    if bath_match:
-                        bathrooms = float(bath_match.group(1))
-                if not sqft:
-                    sqft_match = re.search(r'([\d,]+)\s*(?:sq|sf)', all_text, re.I)
-                    if sqft_match:
-                        sqft = int(sqft_match.group(1).replace(',', ''))
+            all_text = element.get_text()
+            if not rent:
+                rent = self.parse_rent(all_text)
+            if not bedrooms:
+                bed_match = re.search(r'(\d+)\s*(?:bed|br)', all_text, re.I)
+                if bed_match:
+                    bedrooms = int(bed_match.group(1))
+            if not bathrooms:
+                bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba)', all_text, re.I)
+                if bath_match:
+                    bathrooms = float(bath_match.group(1))
+            if not sqft:
+                sqft = self.parse_sqft(all_text)
 
             # Address from p > span (AppFolio pattern)
             address = None
