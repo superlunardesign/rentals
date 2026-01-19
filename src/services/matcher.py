@@ -383,7 +383,11 @@ class MatchingService:
             return MatchTier.FLEXIBLE
 
         # Lacey listings are always FLEXIBLE tier (user preference)
-        if listing.city and listing.city.lower() == "lacey":
+        # Check both explicit city and inferred city from zip code
+        listing_city = listing.city
+        if not listing_city and listing.zip_code:
+            listing_city = self._infer_city_from_zip(listing)
+        if listing_city and listing_city.lower() == "lacey":
             return MatchTier.FLEXIBLE
 
         # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
