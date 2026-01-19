@@ -146,7 +146,13 @@ class MatchingService:
     }
 
     def _is_city_allowed(self, listing: Listing) -> bool:
-        """Check if listing's city is in the allowed list."""
+        """Check if listing's city is in the allowed list.
+
+        Returns:
+            True: City is known and in allowed list
+            False: City is known but NOT in allowed list, OR zip code is outside our area
+            None: City is unknown but zip code is in our local area (goes to FLEXIBLE)
+        """
         allowed_cities = self.config.location.allowed_cities
 
         # If no allowed_cities configured, allow all
@@ -155,17 +161,31 @@ class MatchingService:
 
         allowed_lower = [c.lower() for c in allowed_cities]
 
-        # First check if city is set and allowed
+        # First check if city is set
         if listing.city:
-            return listing.city.lower() in allowed_lower
+            city_lower = listing.city.lower()
+            # If city is in allowed list, it's allowed
+            if city_lower in allowed_lower:
+                return True
+            # If city is NOT in allowed list, check if it's just a variation
+            # or if it's actually a different city outside our area
+            return False  # City is explicitly set to something not allowed
 
-        # If no city but we have a zip code, try to infer the city
+        # No city set - check if zip code is in our known local area
         if listing.zip_code:
-            inferred_city = self.ZIP_TO_CITY.get(listing.zip_code[:5] if listing.zip_code else None)
+            zip_5 = listing.zip_code[:5] if len(listing.zip_code) >= 5 else listing.zip_code
+            inferred_city = self.ZIP_TO_CITY.get(zip_5)
             if inferred_city:
-                return inferred_city.lower() in allowed_lower
+                # Zip is in our area - return True if city is allowed, None if unknown
+                if inferred_city.lower() in allowed_lower:
+                    return True
+                # Zip maps to a city not in allowed list (shouldn't happen with current mapping)
+                return None
+            else:
+                # Zip code is NOT in our known Thurston County area - EXCLUDE it
+                return False
 
-        # Unknown city - return None to signal "unknown" (will go to FLEXIBLE)
+        # No city and no zip code - unknown, go to FLEXIBLE for manual review
         return None
 
     def _infer_city_from_zip(self, listing: Listing) -> str:
