@@ -22,8 +22,14 @@ from src.scheduler import RentalScheduler
 from src.services import ScraperService
 
 
+# Global scheduler reference for status endpoint
+_scheduler = None
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
+    global _scheduler
+
     application = FastAPI(
         title="Rental Search",
         description="Property rental search for Tumwater/Olympia, WA",
@@ -33,22 +39,50 @@ def create_app() -> FastAPI:
     # Include routes
     application.include_router(router)
 
-    # Run scrape on startup (works with uvicorn main:app on Render)
+    # Start scheduler on startup (works with uvicorn main:app on Render)
     @application.on_event("startup")
     async def startup_event():
+        global _scheduler
         config = get_config()
-        if config.scheduler.run_on_startup:
-            print("[startup] Running initial scrape in background...")
-            import threading
-            def run_scrape():
-                try:
-                    service = ScraperService()
-                    results = service.run_all_scrapers()
-                    print(f"[startup] Initial scrape complete: {results['total_found']} listings found")
-                except Exception as e:
-                    print(f"[startup] Error in initial scrape: {e}")
-            thread = threading.Thread(target=run_scrape, daemon=True)
-            thread.start()
+
+        # Check if scheduler is disabled via env var (set by --no-schedule flag)
+        if os.environ.get("DISABLE_SCHEDULER") == "1":
+            print("[startup] Scheduler disabled via DISABLE_SCHEDULER env var")
+            return
+
+        # Start the scheduler for periodic scraping
+        _scheduler = RentalScheduler()
+        _scheduler.start()
+        print(f"[startup] Scheduler started - scraping every {config.scheduler.interval_hours} hour(s)")
+
+    @application.on_event("shutdown")
+    async def shutdown_event():
+        global _scheduler
+        if _scheduler:
+            _scheduler.stop()
+            print("[shutdown] Scheduler stopped")
+
+    # Scheduler status endpoint
+    @application.get("/scheduler/status")
+    async def scheduler_status():
+        """Get scheduler status and next run times."""
+        global _scheduler
+        if not _scheduler:
+            return {"status": "not running", "jobs": []}
+
+        jobs = []
+        for job in _scheduler.scheduler.get_jobs():
+            jobs.append({
+                "id": job.id,
+                "name": job.name,
+                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                "next_run_human": job.next_run_time.strftime("%Y-%m-%d %H:%M:%S %Z") if job.next_run_time else None,
+            })
+
+        return {
+            "status": "running",
+            "jobs": jobs,
+        }
 
     return application
 
@@ -96,24 +130,20 @@ def main():
         print(f"\n[complete] Results: {results}")
         return
 
-    # Start scheduler if not disabled
-    scheduler = None
-    if not args.no_schedule:
-        scheduler = RentalScheduler()
-        scheduler.start()
+    # Disable scheduler if requested
+    if args.no_schedule:
+        os.environ["DISABLE_SCHEDULER"] = "1"
 
     # Get host/port (use env PORT for cloud platforms like Render)
     host = args.host or os.environ.get("HOST", config.dashboard.host)
     port = args.port or int(os.environ.get("PORT", config.dashboard.port))
 
     print(f"\n[startup] Starting web dashboard at http://{host}:{port}")
+    if not args.no_schedule:
+        print("[startup] Scheduler will start automatically on app startup")
     print("[startup] Press Ctrl+C to stop\n")
 
-    try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
-    finally:
-        if scheduler:
-            scheduler.stop()
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
