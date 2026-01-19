@@ -366,6 +366,8 @@ class MatchingService:
         FLEXIBLE (Outliers): Slightly over budget, or has some good qualities
         EXCLUDED: Way over budget or has dealbreakers
         """
+        # Debug helper
+        title_short = (listing.title or "Unknown")[:30]
 
         # Excluded: way over budget (more than $200 over)
         if budget_status == "over":
@@ -377,6 +379,7 @@ class MatchingService:
 
         # Unknown city (city_allowed is None) - put in FLEXIBLE tier for manual review
         if city_allowed is None:
+            print(f"[matcher] {title_short}: FLEXIBLE (unknown city, city={listing.city}, zip={listing.zip_code})")
             return MatchTier.FLEXIBLE
 
         # Lacey listings are always FLEXIBLE tier (user preference)
@@ -387,10 +390,14 @@ class MatchingService:
         text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
         text_lower = text.lower()
         # Check for property type keywords
-        if any(prop_type in text_lower for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex", "unit "]):
-            return MatchTier.FLEXIBLE
+        for prop_type in ["townhouse", "townhome", "duplex", "triplex", "fourplex", "unit "]:
+            if prop_type in text_lower:
+                print(f"[matcher] {title_short}: FLEXIBLE (property type: {prop_type})")
+                return MatchTier.FLEXIBLE
         # Check for unit indicators like "#1", "#2", "Unit A", or trailing "A"/"B" in address
-        if re.search(r'#\d+|unit\s*[a-z0-9]|\s[ab]\s*$|\s[ab],', text_lower):
+        unit_match = re.search(r'#\d+|unit\s*[a-z0-9]|\s[ab]\s*$|\s[ab],', text_lower)
+        if unit_match:
+            print(f"[matcher] {title_short}: FLEXIBLE (unit indicator: '{unit_match.group()}')")
             return MatchTier.FLEXIBLE
 
         # BEST MATCH: Perfect listing

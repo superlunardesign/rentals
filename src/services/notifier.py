@@ -61,9 +61,10 @@ class TelegramNotifier:
         if not self.enabled:
             return False
 
-        # Check if listing tier is in notify_tiers
-        tier = listing.match_tier or "EXCLUDED"
-        return tier in self.notify_tiers
+        # Check if listing tier is in notify_tiers (case-insensitive)
+        tier = (listing.match_tier or "EXCLUDED").upper()
+        notify_tiers_upper = [t.upper() for t in self.notify_tiers]
+        return tier in notify_tiers_upper
 
     def notify_new_listing(self, listing: Listing) -> bool:
         """Send notification about a new matching listing."""
