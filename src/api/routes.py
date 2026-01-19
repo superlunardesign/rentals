@@ -84,8 +84,8 @@ async def dashboard(
     # Within each tier: highest rent first (most expensive to least)
     listings.sort(key=lambda x: (
         tier_order.get(x.match_tier, 5),
-        -(x.match_score or 0),
         -(x.rent or 0),  # Most expensive first
+        -(x.match_score or 0),
     ))
 
     # Group by tier for display
