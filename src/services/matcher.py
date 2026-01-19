@@ -291,8 +291,10 @@ class MatchingService:
 
         # BEST MATCH: Perfect listing
         # Must be within budget, meet best match room criteria, and have keywords
+        # Lacey listings are always a tier below (not best match)
+        is_lacey = listing.city and listing.city.lower() == "lacey"
         if budget_status == "within":
-            if rooms_status["meets_best_match"] and len(keywords) >= 1:
+            if rooms_status["meets_best_match"] and len(keywords) >= 1 and not is_lacey:
                 return MatchTier.BEST_MATCH
 
         # MATCH: Close match
