@@ -107,7 +107,7 @@ sources:
 
   - name: "Simply Home Realty"
     scraper: "simplyhome"
-    url: "https://simplyhomerealtyllc.propertyware.com/rentals.html"
+    url: "https://simplyhomerealtyllc.propertyware.com/rentals.html?addr=olympia&max=2800"
     enabled: true
 
   - name: "Capitol Property Management"
