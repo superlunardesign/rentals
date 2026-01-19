@@ -133,35 +133,54 @@ class SimplyHomeScraper(BrowserScraper):
             if listing_count == 0:
                 return listings
 
+            # Track last address to detect if navigation failed
+            last_address = ""
+            consecutive_failures = 0
+
             # Iterate through each listing using gotoDetail(i)
             for i in range(listing_count):
                 try:
                     print(f"[{self.source_name}] Loading listing {i+1}/{listing_count}...")
 
-                    # Navigate to detail view using gotoDetail
+                    # Navigate to detail view using gotoDetail directly
+                    # No need to go back to list view - gotoDetail handles it
                     await page.evaluate(f"gotoDetail({i})")
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(1000)
 
-                    # Wait for address element to have content
+                    # Wait for address to change from the last one
                     try:
                         await page.wait_for_function(
-                            """() => {
+                            f"""() => {{
                                 const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                                return el && el.textContent && el.textContent.trim().length > 5;
-                            }""",
+                                if (!el) return false;
+                                const addr = el.textContent.trim();
+                                return addr.length > 5 && addr !== "{last_address.replace('"', '\\"')}";
+                            }}""",
                             timeout=5000
                         )
                     except:
-                        # If timeout, try clicking detail tab
-                        try:
-                            await page.click('text="Detail"', timeout=2000)
-                            await page.wait_for_timeout(1000)
-                        except:
-                            pass
+                        # Maybe it's the same building with multiple units - give it more time
+                        await page.wait_for_timeout(1000)
 
                     # Get the page content
                     html = await page.content()
                     soup = BeautifulSoup(html, "lxml")
+
+                    # Get current address
+                    address_el = soup.select_one("#pw_listing_widget_tabs_detail_address")
+                    current_address = address_el.get_text(strip=True) if address_el else ""
+
+                    # Skip if same as last and we've seen it before (navigation stuck)
+                    if current_address and current_address == last_address:
+                        consecutive_failures += 1
+                        if consecutive_failures > 2:
+                            print(f"[{self.source_name}] Navigation seems stuck, stopping...")
+                            break
+                        print(f"[{self.source_name}] Same address as before, retrying...")
+                        continue
+
+                    consecutive_failures = 0
+                    last_address = current_address
 
                     # Extract listing from detail view
                     listing = self._parse_detail_view(soup, i)
@@ -172,21 +191,12 @@ class SimplyHomeScraper(BrowserScraper):
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
 
-                    # Go back to list view for next iteration
-                    try:
-                        await page.click('text="List"', timeout=2000)
-                        await page.wait_for_timeout(500)
-                    except:
-                        pass
-
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i}: {e}")
-                    # Try to get back to list view
-                    try:
-                        await page.click('text="List"', timeout=2000)
-                        await page.wait_for_timeout(500)
-                    except:
-                        pass
+                    consecutive_failures += 1
+                    if consecutive_failures > 3:
+                        print(f"[{self.source_name}] Too many failures, stopping...")
+                        break
                     continue
 
         except Exception as e:
@@ -217,11 +227,25 @@ class SimplyHomeScraper(BrowserScraper):
 
             # Bedrooms
             bed_el = soup.select_one("#pw_listing_widget_tabs_detail_bed")
-            bedrooms = int(bed_el.get_text(strip=True)) if bed_el else None
+            bedrooms = None
+            if bed_el:
+                bed_text = bed_el.get_text(strip=True)
+                if bed_text:
+                    try:
+                        bedrooms = int(bed_text)
+                    except ValueError:
+                        pass
 
             # Bathrooms
             bath_el = soup.select_one("#pw_listing_widget_tabs_detail_bath")
-            bathrooms = float(bath_el.get_text(strip=True)) if bath_el else None
+            bathrooms = None
+            if bath_el:
+                bath_text = bath_el.get_text(strip=True)
+                if bath_text:
+                    try:
+                        bathrooms = float(bath_text)
+                    except ValueError:
+                        pass
 
             # Square footage
             area_el = soup.select_one("#pw_listing_widget_tabs_detail_area")
