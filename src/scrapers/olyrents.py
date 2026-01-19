@@ -146,58 +146,60 @@ class OlyrentsScraper(BrowserScraper):
             if listing_count == 0:
                 return listings
 
-            # Loop through all listings by calling gotoDetail(i) directly
+            # Iterate through each listing using gotoDetail(i)
             for i in range(listing_count):
                 try:
                     print(f"[{self.source_name}] Loading listing {i+1}/{listing_count}...")
 
-                    # Navigate to detail view
+                    # Navigate to detail view using gotoDetail
                     await page.evaluate(f"gotoDetail({i})")
+                    await page.wait_for_timeout(1500)
 
-                    # Wait for the detail view to load with content
-                    # Use a longer initial wait to let the JS render
-                    await page.wait_for_timeout(2000)
-
-                    # Try to get the detail content with retries
-                    for attempt in range(3):
+                    # Wait for address element to have content
+                    try:
+                        await page.wait_for_function(
+                            """() => {
+                                const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                                return el && el.textContent && el.textContent.trim().length > 5;
+                            }""",
+                            timeout=5000
+                        )
+                    except:
+                        # If timeout, try clicking detail tab
                         try:
-                            # Wait for address element to have text content (not just exist)
-                            await page.wait_for_function(
-                                """() => {
-                                    const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                                    return el && el.textContent && el.textContent.trim().length > 5;
-                                }""",
-                                timeout=8000
-                            )
+                            await page.click('text="Detail"', timeout=2000)
+                            await page.wait_for_timeout(1000)
+                        except:
+                            pass
 
-                            # Get the page content
-                            html = await page.content()
-                            soup = BeautifulSoup(html, "lxml")
+                    # Get the page content
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "lxml")
 
-                            # Extract listing from detail view
-                            listing = self._parse_detail_view(soup, i)
-                            if listing:
-                                listings.append(listing)
-                                print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-                                # Call callback to save immediately
-                                if self._on_listing_callback:
-                                    self._on_listing_callback(listing)
-                            break  # Success, exit retry loop
+                    # Extract listing from detail view
+                    listing = self._parse_detail_view(soup, i)
+                    if listing:
+                        listings.append(listing)
+                        print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                        # Call callback to save immediately
+                        if self._on_listing_callback:
+                            self._on_listing_callback(listing)
 
-                        except Exception as retry_e:
-                            if attempt < 2:
-                                print(f"[{self.source_name}] Retry {attempt+1} for listing {i}...")
-                                # Try clicking the detail tab to force it
-                                try:
-                                    await page.click('#pw_listing_widget_tabs li:has-text("Detail")', timeout=2000)
-                                except:
-                                    pass
-                                await page.wait_for_timeout(1500)
-                            else:
-                                raise retry_e
+                    # Go back to list view for next iteration
+                    try:
+                        await page.click('text="List"', timeout=2000)
+                        await page.wait_for_timeout(500)
+                    except:
+                        pass
 
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i}: {e}")
+                    # Try to get back to list view
+                    try:
+                        await page.click('text="List"', timeout=2000)
+                        await page.wait_for_timeout(500)
+                    except:
+                        pass
                     continue
 
         except Exception as e:
