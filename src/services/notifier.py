@@ -37,11 +37,24 @@ class TelegramNotifier:
 
         if self.enabled:
             print(f"[telegram] Notifications enabled for tiers: {self.notify_tiers}")
+            # Send test message on startup
+            self._send_startup_message()
         else:
             if not self.bot_token:
                 print("[telegram] Disabled - no bot token configured")
             elif not self.chat_id:
                 print("[telegram] Disabled - no chat_id configured")
+
+    def _send_startup_message(self):
+        """Send a test message on startup to verify bot is working."""
+        try:
+            message = "🏠 *Rental Scraper Started*\n\nBot is online and monitoring for new listings!"
+            if self._send_message(message):
+                print("[telegram] Startup message sent successfully")
+            else:
+                print("[telegram] Failed to send startup message")
+        except Exception as e:
+            print(f"[telegram] Error sending startup message: {e}")
 
     def should_notify(self, listing: Listing) -> bool:
         """Check if we should send notification for this listing."""
