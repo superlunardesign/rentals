@@ -152,7 +152,7 @@ class SimplyHomeScraper(BaseScraper):
                 url=detail_url or self.base_url,
                 title=title or address or "Simply Home Property",
                 address=address,
-                city=city or "Olympia",
+                city=city,  # Don't default - let matcher filter unknown cities
                 state=state or "WA",
                 zip_code=zip_code,
                 rent=rent,

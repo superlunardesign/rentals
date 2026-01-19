@@ -81,10 +81,11 @@ async def dashboard(
     listings = query.all()
 
     # Sort in Python since SQLite doesn't have CASE easily
+    # Within each tier: highest rent first (most expensive to least)
     listings.sort(key=lambda x: (
         tier_order.get(x.match_tier, 5),
         -(x.match_score or 0),
-        x.rent or 99999,
+        -(x.rent or 0),  # Most expensive first
     ))
 
     # Group by tier for display

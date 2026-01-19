@@ -120,9 +120,10 @@ class MatchingService:
         if not allowed_cities:
             return True
 
-        # If listing has no city, allow it (will be filtered by distance instead)
+        # If listing has no city, exclude it when allowed_cities is configured
+        # (we can't verify it's in an allowed city)
         if not listing.city:
-            return True
+            return False
 
         # Case-insensitive match
         allowed_lower = [c.lower() for c in allowed_cities]

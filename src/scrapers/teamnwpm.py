@@ -228,7 +228,7 @@ class TeamNWPMScraper(BaseScraper):
                 url=detail_url,
                 title=title,
                 address=address,
-                city=city or "Olympia",
+                city=city,  # Don't default - let matcher filter unknown cities
                 state=state or "WA",
                 zip_code=zip_code,
                 rent=rent,
