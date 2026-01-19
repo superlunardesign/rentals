@@ -115,7 +115,7 @@ sources:
   # --- Slow browser-based PropertyWare scrapers (run last) ---
   - name: "Olympic Landlord & Rental Services"
     scraper: "olyrents"
-    url: "https://olyrents.propertyware.com/"
+    url: "https://olyrents.propertyware.com/?addr=olympia"
     enabled: true
 
   - name: "Simply Home Realty"
