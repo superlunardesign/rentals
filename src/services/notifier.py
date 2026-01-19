@@ -206,6 +206,69 @@ class TelegramNotifier:
         message = "🔔 *Rental Tracker Test*\n\nTelegram notifications are working\\!"
         return self._send_message(message)
 
+    def notify_price_drop(self, price_drop: dict) -> bool:
+        """Send notification about a price drop."""
+        if not self.enabled:
+            return False
+
+        listing = price_drop.get("listing")
+        if not listing:
+            return False
+
+        # Only notify for tiers we care about
+        tier = (listing.match_tier or "EXCLUDED").upper()
+        notify_tiers_upper = [t.upper() for t in self.notify_tiers]
+        if tier not in notify_tiers_upper:
+            print(f"[telegram] Skipping price drop - tier {tier} not in notify_tiers")
+            return False
+
+        try:
+            message = self._format_price_drop_message(price_drop)
+            print(f"[telegram] Sending price drop notification: {listing.title[:30]}...")
+            return self._send_message(message)
+        except Exception as e:
+            print(f"[telegram] Error sending price drop notification: {e}")
+            return False
+
+    def _format_price_drop_message(self, price_drop: dict) -> str:
+        """Format a price drop notification message."""
+        listing = price_drop["listing"]
+        old_rent = price_drop["old_rent"]
+        new_rent = price_drop["new_rent"]
+        drop_amount = price_drop["drop_amount"]
+        drop_percent = price_drop["drop_percent"]
+
+        dashboard_url = os.environ.get("RENDER_EXTERNAL_URL", "https://rentals-09tb.onrender.com")
+
+        address = self._escape_markdown(listing.title or listing.address or "Unknown")
+
+        # Specs
+        specs = []
+        if listing.bedrooms is not None:
+            specs.append(f"{listing.bedrooms} bd")
+        if listing.bathrooms is not None:
+            bath_str = str(listing.bathrooms).rstrip('0').rstrip('.')
+            specs.append(f"{bath_str} ba")
+        if listing.sqft:
+            specs.append(f"{listing.sqft:,} sq ft")
+        specs_str = ", ".join(specs) if specs else "Specs N/A"
+
+        lines = [
+            "💰 *Price Drop\\!*",
+            "",
+            f"*${old_rent:,}* → *${new_rent:,}* \\(\\-${drop_amount:,}, \\-{drop_percent:.0f}%\\)",
+            "",
+            f"{address}",
+            f"{specs_str}",
+            "",
+            f"[View Dashboard]({dashboard_url})",
+        ]
+
+        if listing.url:
+            lines.append(f"[View Listing]({listing.url})")
+
+        return "\n".join(lines)
+
 
 class NotificationService:
     """Main notification service that coordinates all notification channels."""
@@ -224,6 +287,12 @@ class NotificationService:
             results["telegram_sent"] = self.telegram.notify_multiple_listings(listings)
 
         return results
+
+    def notify_price_drop(self, price_drop: dict) -> bool:
+        """Send notification about a price drop."""
+        if self.telegram.enabled:
+            return self.telegram.notify_price_drop(price_drop)
+        return False
 
     def send_test(self) -> dict:
         """Send test notifications to verify all channels work."""

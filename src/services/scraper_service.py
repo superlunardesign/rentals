@@ -172,9 +172,12 @@ class ScraperService:
                 existing = self._find_existing(session, scraped)
 
                 if existing:
-                    self._update_listing(existing, scraped)
+                    price_drop = self._update_listing(existing, scraped)
                     session.commit()
-                    return {"source_id": source_id, "is_new": False, "listing": None}
+                    if price_drop:
+                        # Notify about price drop
+                        self.notifier.notify_price_drop(price_drop)
+                    return {"source_id": source_id, "is_new": False, "listing": None, "price_drop": price_drop}
                 else:
                     listing = self._create_listing(scraped)
                     session.add(listing)
@@ -231,8 +234,13 @@ class ScraperService:
 
                 if existing:
                     # Update existing listing
-                    self._update_listing(existing, scraped)
+                    price_drop = self._update_listing(existing, scraped)
                     results["updated"] += 1
+                    if price_drop:
+                        # Track for price drop notification
+                        if "price_drops" not in results:
+                            results["price_drops"] = []
+                        results["price_drops"].append(price_drop)
                 else:
                     # Create new listing
                     listing = self._create_listing(scraped)
@@ -246,6 +254,11 @@ class ScraperService:
             # Refresh listing objects to get IDs after commit
             for listing in results["new_listing_objects"]:
                 session.refresh(listing)
+
+            # Send price drop notifications
+            if results.get("price_drops"):
+                for price_drop in results["price_drops"]:
+                    self.notifier.notify_price_drop(price_drop)
 
         return results
 
@@ -323,8 +336,25 @@ class ScraperService:
 
         return listing
 
-    def _update_listing(self, listing: Listing, scraped: ScrapedListing):
-        """Update an existing listing with new scraped data."""
+    def _update_listing(self, listing: Listing, scraped: ScrapedListing) -> Optional[dict]:
+        """Update an existing listing with new scraped data.
+
+        Returns price drop info if detected: {"old_rent": X, "new_rent": Y, "listing": listing}
+        """
+        price_drop = None
+
+        # Check for price drop before updating
+        if scraped.rent and listing.rent and scraped.rent < listing.rent:
+            drop_amount = listing.rent - scraped.rent
+            drop_percent = (drop_amount / listing.rent) * 100
+            print(f"[scraper] 💰 PRICE DROP: {listing.title[:30]}... ${listing.rent} → ${scraped.rent} (-${drop_amount}, -{drop_percent:.1f}%)")
+            price_drop = {
+                "old_rent": listing.rent,
+                "new_rent": scraped.rent,
+                "drop_amount": drop_amount,
+                "drop_percent": drop_percent,
+            }
+
         # Update fields that might change
         listing.rent = scraped.rent or listing.rent
         listing.title = scraped.title or listing.title
@@ -348,6 +378,11 @@ class ScraperService:
 
         # Re-run matching in case criteria changed
         self.matcher.update_listing_match(listing)
+
+        # Return price drop info if detected
+        if price_drop:
+            price_drop["listing"] = listing
+        return price_drop
 
     def mark_stale_inactive(self, hours: int = 48):
         """Mark listings not seen in X hours as inactive."""
