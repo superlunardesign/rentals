@@ -77,48 +77,70 @@
         }
 
         .section {
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
 
         .section-header {
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #eee;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: opacity 0.2s;
+        }
+
+        .section-header:hover {
+            opacity: 0.9;
         }
 
         .section-header h2 {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
+            color: white;
+            margin: 0;
         }
 
         .section-header .badge {
-            background: #3498db;
+            background: rgba(255,255,255,0.3);
             color: white;
-            padding: 2px 8px;
+            padding: 2px 10px;
             border-radius: 12px;
             font-size: 0.8rem;
         }
 
+        .section-header .toggle-icon {
+            margin-left: auto;
+            color: white;
+            font-size: 1.2rem;
+            transition: transform 0.2s;
+        }
+
+        .section.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .section.collapsed .listings {
+            display: none;
+        }
+
+        .section .listings {
+            margin-top: 15px;
+        }
+
+        /* Best Match - Green */
         .section.best-match .section-header {
-            border-color: #27ae60;
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
         }
 
-        .section.best-match .badge {
-            background: #27ae60;
-        }
-
+        /* Match - Blue */
         .section.match .section-header {
-            border-color: #3498db;
+            background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
         }
 
+        /* Flexible - Yellow/Orange */
         .section.flexible .section-header {
-            border-color: #f39c12;
-        }
-
-        .section.flexible .badge {
-            background: #f39c12;
+            background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%);
         }
 
         .listings {
@@ -374,9 +396,10 @@
 
         {% if grouped.best_match %}
         <section class="section best-match">
-            <div class="section-header">
+            <div class="section-header" onclick="toggleSection(this)">
                 <h2>Best Match</h2>
                 <span class="badge">{{ grouped.best_match|length }}</span>
+                <span class="toggle-icon">▼</span>
             </div>
             <div class="listings">
                 {% for listing in grouped.best_match %}
@@ -450,9 +473,10 @@
 
         {% if grouped.match %}
         <section class="section match">
-            <div class="section-header">
+            <div class="section-header" onclick="toggleSection(this)">
                 <h2>Match</h2>
                 <span class="badge">{{ grouped.match|length }}</span>
+                <span class="toggle-icon">▼</span>
             </div>
             <div class="listings">
                 {% for listing in grouped.match %}
@@ -525,10 +549,11 @@
         {% endif %}
 
         {% if grouped.flexible %}
-        <section class="section flexible">
-            <div class="section-header">
+        <section class="section flexible collapsed">
+            <div class="section-header" onclick="toggleSection(this)">
                 <h2>Flexible</h2>
                 <span class="badge">{{ grouped.flexible|length }}</span>
+                <span class="toggle-icon">▼</span>
             </div>
             <div class="listings">
                 {% for listing in grouped.flexible %}
@@ -630,6 +655,11 @@
             const card = button.closest('.listing-card');
             card.classList.remove('is-new');
             card.querySelector('.new-badge')?.remove();
+        }
+
+        function toggleSection(header) {
+            const section = header.closest('.section');
+            section.classList.toggle('collapsed');
         }
 
         async function markAllSeen() {
