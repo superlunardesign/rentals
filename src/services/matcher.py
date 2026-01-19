@@ -74,6 +74,15 @@ class MatchingService:
                 reasons=[f"Only {listing.bedrooms} bedroom (need 2+)"]
             )
 
+        # Exclude listings with less than 2 bathrooms
+        if listing.bathrooms is not None and listing.bathrooms < 2:
+            return MatchResult(
+                tier=MatchTier.EXCLUDED,
+                score=0,
+                matched_keywords=[],
+                reasons=[f"Only {listing.bathrooms} bath (need 2+)"]
+            )
+
         # Get all the checks
         budget_status = self._check_budget(listing)
         rooms_status = self._check_rooms(listing)
