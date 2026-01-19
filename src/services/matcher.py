@@ -58,13 +58,15 @@ class MatchingService:
             )
 
         # Check if city is allowed
-        if not self._is_city_allowed(listing):
+        city_allowed = self._is_city_allowed(listing)
+        if city_allowed is False:  # Explicitly False = city is known but not allowed
             return MatchResult(
                 tier=MatchTier.EXCLUDED,
                 score=0,
                 matched_keywords=[],
                 reasons=[f"City not in allowed list: {listing.city}"]
             )
+        # city_allowed is None means unknown city - will go to FLEXIBLE tier later
 
         # Exclude 1-bedroom listings - need at least 2 bedrooms
         if listing.bedrooms is not None and listing.bedrooms < 2:
@@ -108,7 +110,8 @@ class MatchingService:
             budget_status=budget_status["status"],
             rooms_status=rooms_status,
             distance_status=distance_status["status"],
-            keywords=matched_keywords
+            keywords=matched_keywords,
+            city_allowed=city_allowed
         )
 
         # Clamp score
@@ -131,6 +134,17 @@ class MatchingService:
                 return True
         return False
 
+    # Zip code to city mapping for Thurston County area
+    ZIP_TO_CITY = {
+        "98501": "Olympia",
+        "98502": "Olympia",
+        "98503": "Lacey",
+        "98506": "Olympia",
+        "98512": "Tumwater",
+        "98513": "Lacey",
+        "98516": "Lacey",
+    }
+
     def _is_city_allowed(self, listing: Listing) -> bool:
         """Check if listing's city is in the allowed list."""
         allowed_cities = self.config.location.allowed_cities
@@ -139,14 +153,26 @@ class MatchingService:
         if not allowed_cities:
             return True
 
-        # If listing has no city, exclude it when allowed_cities is configured
-        # (we can't verify it's in an allowed city)
-        if not listing.city:
-            return False
-
-        # Case-insensitive match
         allowed_lower = [c.lower() for c in allowed_cities]
-        return listing.city.lower() in allowed_lower
+
+        # First check if city is set and allowed
+        if listing.city:
+            return listing.city.lower() in allowed_lower
+
+        # If no city but we have a zip code, try to infer the city
+        if listing.zip_code:
+            inferred_city = self.ZIP_TO_CITY.get(listing.zip_code[:5] if listing.zip_code else None)
+            if inferred_city:
+                return inferred_city.lower() in allowed_lower
+
+        # Unknown city - return None to signal "unknown" (will go to FLEXIBLE)
+        return None
+
+    def _infer_city_from_zip(self, listing: Listing) -> str:
+        """Try to infer city from zip code."""
+        if listing.zip_code:
+            return self.ZIP_TO_CITY.get(listing.zip_code[:5], None)
+        return None
 
     def _check_budget(self, listing: Listing) -> dict:
         """Check if listing is within budget."""
@@ -309,7 +335,8 @@ class MatchingService:
         budget_status: str,
         rooms_status: dict,
         distance_status: str,
-        keywords: list[str]
+        keywords: list[str],
+        city_allowed: bool = True
     ) -> MatchTier:
         """
         Determine the matching tier.
@@ -327,6 +354,10 @@ class MatchingService:
         # Excluded: too small (below minimum sqft)
         if rooms_status.get("sqft") is not None and rooms_status["sqft"] < self.config.rooms.min_sqft:
             return MatchTier.EXCLUDED
+
+        # Unknown city (city_allowed is None) - put in FLEXIBLE tier for manual review
+        if city_allowed is None:
+            return MatchTier.FLEXIBLE
 
         # Lacey listings are always FLEXIBLE tier (user preference)
         if listing.city and listing.city.lower() == "lacey":
