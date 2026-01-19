@@ -90,13 +90,16 @@ async def dashboard(
 
     # Group by tier for display
     grouped = {
+        "favorites": [],
         "best_match": [],
         "match": [],
         "flexible": [],
     }
 
     for listing in listings:
-        if listing.match_tier in grouped:
+        if listing.is_favorite:
+            grouped["favorites"].append(listing)
+        elif listing.match_tier in grouped:
             grouped[listing.match_tier].append(listing)
 
     # Get unique sources for filter dropdown

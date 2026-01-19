@@ -143,6 +143,11 @@
             background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%);
         }
 
+        /* Favorites - Gold/Purple */
+        .section.favorites .section-header {
+            background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+        }
+
         .listings {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -393,6 +398,83 @@
             <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
             <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
         </form>
+
+        {% if grouped.favorites %}
+        <section class="section favorites">
+            <div class="section-header" onclick="toggleSection(this)">
+                <h2>★ Favorites</h2>
+                <span class="badge">{{ grouped.favorites|length }}</span>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="listings">
+                {% for listing in grouped.favorites %}
+                <div class="listing-card {% if listing.is_new %}is-new{% endif %} is-favorite" data-id="{{ listing.id }}">
+                    <a href="{{ listing.url }}" target="_blank" class="listing-image-link">
+                        {% if listing.image_url %}
+                        <img class="listing-image" src="{{ listing.image_url }}" alt="{{ listing.title }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                        <div class="listing-image-placeholder" style="display:none;">🏠</div>
+                        {% else %}
+                        <div class="listing-image-placeholder">🏠</div>
+                        {% endif %}
+                    </a>
+
+                    <div class="card-body">
+                        {% if listing.is_new %}
+                        <span class="new-badge">New</span>
+                        {% endif %}
+
+                        <div class="title">
+                            <a href="{{ listing.url }}" target="_blank">{{ listing.title }}</a>
+                            <span class="score-badge">{{ listing.match_score or 0 }}%</span>
+                        </div>
+
+                        <div class="price">
+                            {% if listing.rent %}
+                                ${{ "{:,}".format(listing.rent) }}/mo
+                            {% else %}
+                                Price TBD
+                            {% endif %}
+                        </div>
+
+                        <div class="specs">
+                            {% if listing.bedrooms %}<span>{{ listing.bedrooms }} bed</span>{% endif %}
+                            {% if listing.bathrooms %}<span>{{ listing.bathrooms }} bath</span>{% endif %}
+                            {% if listing.sqft %}<span>{{ "{:,}".format(listing.sqft) }} sqft</span>{% endif %}
+                        </div>
+
+                        {% if listing.full_address %}
+                        <div class="address">{{ listing.full_address }}</div>
+                        {% endif %}
+
+                        {% if listing.distance_miles %}
+                        <div class="distance">{{ "%.1f"|format(listing.distance_miles) }} miles away</div>
+                        {% endif %}
+
+                        {% if listing.keyword_list %}
+                        <div class="keywords">
+                            {% for kw in listing.keyword_list %}
+                            <span class="keyword">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div class="source">via {{ listing.source_name }}</div>
+
+                        <div class="actions">
+                            <button class="favorite active" onclick="toggleFavorite({{ listing.id }}, this)">
+                                ★ Favorited
+                            </button>
+                            {% if listing.is_new %}
+                            <button onclick="markSeen({{ listing.id }}, this)">Mark Seen</button>
+                            {% endif %}
+                            <button onclick="hideListing({{ listing.id }})">Hide</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
 
         {% if grouped.best_match %}
         <section class="section best-match">
