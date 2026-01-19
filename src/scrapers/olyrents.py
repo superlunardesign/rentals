@@ -61,20 +61,17 @@ class OlyrentsScraper(BrowserScraper):
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(3000)  # Wait for JS to render
 
-            # Count how many listings are available (only visible ones)
+            # Count how many listings are available
+            # Use the pw_listing_widget's internal data if available, otherwise count tables
             listing_count = await page.evaluate("""
                 () => {
-                    const tables = document.querySelectorAll('table.listTable');
-                    let visibleCount = 0;
-                    tables.forEach(t => {
-                        // Check if table is visible (has dimensions and not hidden)
-                        const rect = t.getBoundingClientRect();
-                        const style = window.getComputedStyle(t);
-                        if (rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {
-                            visibleCount++;
-                        }
-                    });
-                    return visibleCount;
+                    // Try to get count from PropertyWare's internal state
+                    if (typeof pw_listing_widget !== 'undefined' && pw_listing_widget.listings) {
+                        return pw_listing_widget.listings.length;
+                    }
+                    // Fallback: count tables in the list view
+                    const tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
+                    return tables.length;
                 }
             """)
             print(f"[{self.source_name}] Found {listing_count} listing tables")
