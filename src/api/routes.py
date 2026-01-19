@@ -317,6 +317,29 @@ async def rematch_all_listings(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/telegram/test")
+async def test_telegram():
+    """Test Telegram notification setup."""
+    from ..services.notifier import TelegramNotifier
+
+    notifier = TelegramNotifier()
+    result = {
+        "enabled": notifier.enabled,
+        "bot_token_set": bool(notifier.bot_token),
+        "chat_id": notifier.chat_id,
+        "notify_tiers": notifier.notify_tiers,
+    }
+
+    if notifier.enabled:
+        success = notifier.send_test_message()
+        result["test_sent"] = success
+    else:
+        result["test_sent"] = False
+        result["reason"] = "Telegram not enabled - check bot_token and chat_id"
+
+    return result
+
+
 @router.get("/api/listings")
 async def get_listings(
     tier: Optional[str] = Query(None),

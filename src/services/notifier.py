@@ -37,13 +37,14 @@ class TelegramNotifier:
 
         if self.enabled:
             print(f"[telegram] Notifications enabled for tiers: {self.notify_tiers}")
+            print(f"[telegram] Bot token: {'***' + self.bot_token[-6:] if self.bot_token else 'None'}")
+            print(f"[telegram] Chat ID: {self.chat_id}")
             # Send test message on startup
             self._send_startup_message()
         else:
-            if not self.bot_token:
-                print("[telegram] Disabled - no bot token configured")
-            elif not self.chat_id:
-                print("[telegram] Disabled - no chat_id configured")
+            print(f"[telegram] Disabled - enabled={telegram_config.enabled if telegram_config else 'N/A'}, "
+                  f"bot_token={'set' if self.bot_token else 'missing'}, "
+                  f"chat_id={'set' if self.chat_id else 'missing'}")
 
     def _send_startup_message(self):
         """Send a test message on startup to verify bot is working."""
@@ -68,10 +69,15 @@ class TelegramNotifier:
 
     def notify_new_listing(self, listing: Listing) -> bool:
         """Send notification about a new matching listing."""
+        tier = (listing.match_tier or "EXCLUDED").upper()
+        print(f"[telegram] Checking listing: {listing.title[:30] if listing.title else 'Unknown'}... tier={tier}")
+
         if not self.should_notify(listing):
+            print(f"[telegram] Skipping - tier {tier} not in notify_tiers {self.notify_tiers}")
             return False
 
         try:
+            print(f"[telegram] Sending notification for: {listing.title}")
             message = self._format_listing_message(listing)
             return self._send_message(message)
         except Exception as e:
