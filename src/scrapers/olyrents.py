@@ -49,7 +49,7 @@ class OlyrentsScraper(BrowserScraper):
         return listings
 
     async def _scrape_with_detail_views(self) -> list[ScrapedListing]:
-        """Navigate through each listing's detail view to extract complete data."""
+        """Scrape listings from the list view (faster and more reliable)."""
         listings = []
 
         browser = await self._get_browser_async()
@@ -68,214 +68,37 @@ class OlyrentsScraper(BrowserScraper):
                 await page.wait_for_selector('#pw_listing_widget_tabs_list', timeout=10000)
                 print(f"[{self.source_name}] Widget container found")
             except:
-                print(f"[{self.source_name}] Widget container not found, checking page structure...")
-                # Debug: log what's on the page
-                debug_info = await page.evaluate("""
-                    () => ({
-                        url: window.location.href,
-                        hasIframes: document.querySelectorAll('iframe').length,
-                        bodyText: document.body.innerText.substring(0, 500),
-                        allIds: Array.from(document.querySelectorAll('[id]')).map(e => e.id).slice(0, 20)
-                    })
-                """)
-                print(f"[{self.source_name}] Debug: {debug_info}")
-
-            # Give it more time for content to populate
-            await page.wait_for_timeout(3000)
-
-            # Count how many listings are available using multiple methods
-            listing_info = await page.evaluate("""
-                () => {
-                    let info = {
-                        method: null,
-                        count: 0,
-                        debug: {}
-                    };
-
-                    // Method 1: PropertyWare's internal state
-                    if (typeof pw_listing_widget !== 'undefined') {
-                        info.debug.pw_widget_exists = true;
-                        if (pw_listing_widget.listings) {
-                            info.method = 'pw_listing_widget.listings';
-                            info.count = pw_listing_widget.listings.length;
-                            return info;
-                        }
-                        if (pw_listing_widget.data && pw_listing_widget.data.listings) {
-                            info.method = 'pw_listing_widget.data.listings';
-                            info.count = pw_listing_widget.data.listings.length;
-                            return info;
-                        }
-                    }
-
-                    // Method 2: Check how many gotoDetail functions actually exist
-                    // by looking at the widget's internal listing array or testing
-                    let maxValid = 0;
-                    for (let i = 0; i < 200; i++) {
-                        try {
-                            // Check if this index has data in the widget
-                            if (typeof pw_listing_widget !== 'undefined' &&
-                                pw_listing_widget.listingData &&
-                                pw_listing_widget.listingData[i]) {
-                                maxValid = i + 1;
-                            }
-                        } catch (e) {
-                            break;
-                        }
-                    }
-                    if (maxValid > 0) {
-                        info.method = 'pw_listing_widget.listingData iteration';
-                        info.count = maxValid;
-                        info.debug.max_valid_index = maxValid;
-                        return info;
-                    }
-
-                    // Method 3: Count list items with pw_listing_widget_tabs_list_item class
-                    const listItems = document.querySelectorAll('li.pw_listing_widget_tabs_list_item[style*="display: block"], li.pw_listing_widget_tabs_list_item:not([style*="display: none"])');
-                    info.debug.list_items_visible = listItems.length;
-                    if (listItems.length > 0) {
-                        info.method = 'visible list items';
-                        info.count = listItems.length;
-                        return info;
-                    }
-
-                    // Method 4: Count listing cards (each listing has one card with image)
-                    const listingCards = document.querySelectorAll('#pw_listing_widget_tabs_list .pw-listing-card, #pw_listing_widget_tabs_list .listRow');
-                    info.debug.listing_cards = listingCards.length;
-                    if (listingCards.length > 0) {
-                        info.method = 'listing cards/rows';
-                        info.count = listingCards.length;
-                        return info;
-                    }
-
-                    // Method 5: Count gotoDetail links
-                    const detailLinks = document.querySelectorAll('a[href*="gotoDetail"]');
-                    info.debug.detail_links = detailLinks.length;
-                    if (detailLinks.length > 0) {
-                        info.method = 'gotoDetail links';
-                        info.count = detailLinks.length;
-                        return info;
-                    }
-
-                    // Method 6: Count images in list view (one per listing)
-                    const listImages = document.querySelectorAll('#pw_listing_widget_tabs_list img.listPhoto');
-                    info.debug.list_images = listImages.length;
-                    if (listImages.length > 0) {
-                        info.method = 'list images';
-                        info.count = listImages.length;
-                        return info;
-                    }
-
-                    // Method 7: Fallback - count tables but divide by likely tables-per-listing
-                    let tables = document.querySelectorAll('#pw_listing_widget_tabs_list table.listTable');
-                    info.debug.tables_in_list_container = tables.length;
-                    if (tables.length > 0) {
-                        // Assume ~4 tables per listing based on 125/33 ratio
-                        info.method = 'tables divided';
-                        info.count = Math.ceil(tables.length / 4);
-                        return info;
-                    }
-
-                    return info;
-                }
-            """)
-
-            print(f"[{self.source_name}] Listing detection: method={listing_info.get('method')}, debug={listing_info.get('debug')}")
-            listing_count = listing_info.get('count', 0)
-            print(f"[{self.source_name}] Found {listing_count} listing tables")
-
-            if listing_count == 0:
+                print(f"[{self.source_name}] Widget container not found")
                 return listings
 
-            # Start with first listing using gotoDetail(0)
-            print(f"[{self.source_name}] Loading listing 1/{listing_count}...")
-            await page.evaluate("gotoDetail(0)")
-            await page.wait_for_timeout(1500)
+            # Give it more time for content to populate
+            await page.wait_for_timeout(2000)
 
-            # Wait for first detail to load
-            try:
-                await page.wait_for_function(
-                    """() => {
-                        const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                        return el && el.textContent && el.textContent.trim().length > 5;
-                    }""",
-                    timeout=5000
-                )
-            except:
-                print(f"[{self.source_name}] First listing didn't load, trying to continue...")
+            # Get the full page HTML and parse list view
+            html = await page.content()
+            soup = BeautifulSoup(html, "lxml")
 
-            # Track addresses to detect stuck navigation
-            seen_addresses = set()
+            # Find all visible listing items in the list view
+            list_items = soup.select('li.pw_listing_widget_tabs_list_item')
+            visible_items = [item for item in list_items if 'display: none' not in item.get('style', '')]
 
-            # Iterate through listings using gotoNextBuilding()
-            for i in range(listing_count):
+            print(f"[{self.source_name}] Found {len(visible_items)} listings in list view")
+
+            for i, item in enumerate(visible_items):
                 try:
-                    # Get the page content
-                    html = await page.content()
-                    soup = BeautifulSoup(html, "lxml")
-
-                    # Get current address
-                    address_el = soup.select_one("#pw_listing_widget_tabs_detail_address")
-                    current_address = address_el.get_text(strip=True) if address_el else ""
-
-                    # Skip empty addresses (page didn't load)
-                    if not current_address or len(current_address) < 5:
-                        print(f"[{self.source_name}] Empty address on iteration {i+1}, skipping...")
-                        # Try to navigate to next
-                        if i < listing_count - 1:
-                            print(f"[{self.source_name}] Calling gotoNextBuilding()...")
-                            try:
-                                await asyncio.wait_for(
-                                    page.evaluate("gotoNextBuilding()"),
-                                    timeout=5.0
-                                )
-                            except asyncio.TimeoutError:
-                                print(f"[{self.source_name}] Navigation timed out, trying to continue...")
-                            await page.wait_for_timeout(1500)
-                        continue
-
-                    # Check for duplicate (we've cycled back to start)
-                    if current_address in seen_addresses:
-                        print(f"[{self.source_name}] Cycled back to seen address ({current_address[:30]}...), stopping...")
-                        break
-                    seen_addresses.add(current_address)
-
-                    # Extract listing from detail view
-                    listing = self._parse_detail_view(soup, i)
+                    listing = self._parse_list_item(item, i)
                     if listing:
                         listings.append(listing)
-                        print(f"[{self.source_name}] Parsed {i+1}/{listing_count}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                        print(f"[{self.source_name}] Parsed {i+1}/{len(visible_items)}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
                         # Call callback to save immediately
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
-
-                    # Navigate to next listing (unless this is the last one)
-                    if i < listing_count - 1:
-                        print(f"[{self.source_name}] Navigating to next listing...")
-                        try:
-                            await asyncio.wait_for(
-                                page.evaluate("gotoNextBuilding()"),
-                                timeout=5.0
-                            )
-                        except asyncio.TimeoutError:
-                            print(f"[{self.source_name}] Navigation timed out, trying to continue...")
-                        # Wait for content to update
-                        await page.wait_for_timeout(1500)
-
                 except Exception as e:
-                    print(f"[{self.source_name}] Error on listing {i+1}: {e}")
-                    # Try to continue to next
-                    try:
-                        await asyncio.wait_for(
-                            page.evaluate("gotoNextBuilding()"),
-                            timeout=5.0
-                        )
-                        await page.wait_for_timeout(1500)
-                    except:
-                        pass
+                    print(f"[{self.source_name}] Error parsing list item {i+1}: {e}")
                     continue
 
         except Exception as e:
-            print(f"[{self.source_name}] Error in detail scraping: {e}")
+            print(f"[{self.source_name}] Error scraping list view: {e}")
             import traceback
             traceback.print_exc()
 
@@ -283,6 +106,103 @@ class OlyrentsScraper(BrowserScraper):
             await page.close()
 
         return listings
+
+    def _parse_list_item(self, item: Tag, index: int) -> Optional[ScrapedListing]:
+        """Parse a listing from the list view item."""
+        try:
+            # Get the listing title/address from the link
+            title_link = item.select_one('a[href*="gotoDetail"]')
+            title = title_link.get_text(strip=True) if title_link else None
+
+            # Get address from title or separate element
+            address = title
+
+            # Get price
+            price_el = item.select_one('.listRent, .listPrice')
+            rent = None
+            if price_el:
+                price_text = price_el.get_text(strip=True)
+                rent_match = re.search(r'\$?([\d,]+)', price_text)
+                if rent_match:
+                    rent = int(rent_match.group(1).replace(',', ''))
+
+            # Get beds/baths - usually in format "3 Bed / 2 Bath" or similar
+            beds_el = item.select_one('.listBed')
+            baths_el = item.select_one('.listBath')
+
+            bedrooms = None
+            if beds_el:
+                bed_text = beds_el.get_text(strip=True)
+                bed_match = re.search(r'(\d+)', bed_text)
+                if bed_match:
+                    bedrooms = int(bed_match.group(1))
+
+            bathrooms = None
+            if baths_el:
+                bath_text = baths_el.get_text(strip=True)
+                bath_match = re.search(r'(\d+\.?\d*)', bath_text)
+                if bath_match:
+                    bathrooms = float(bath_match.group(1))
+
+            # Get square footage if available
+            sqft_el = item.select_one('.listSqFt, .listArea')
+            sqft = None
+            if sqft_el:
+                sqft_text = sqft_el.get_text(strip=True).replace(',', '')
+                sqft_match = re.search(r'(\d+)', sqft_text)
+                if sqft_match:
+                    sqft = int(sqft_match.group(1))
+
+            # Get image
+            img_el = item.select_one('img.listPhoto')
+            image_url = img_el.get('src') if img_el else None
+
+            # Get property type
+            type_el = item.select_one('.listType')
+            prop_type = type_el.get_text(strip=True) if type_el else None
+
+            # Parse city/state/zip from address
+            city, state, zip_code = None, None, None
+            if address:
+                zip_match = re.search(r'(\d{5})(?:-\d{4})?', address)
+                if zip_match:
+                    zip_code = zip_match.group(1)
+
+                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Shelton)', address, re.I)
+                if city_match:
+                    city = city_match.group(1).title()
+                    state = "WA"
+
+            # Generate source ID from address
+            source_id = f"olyrents_{index}_{abs(hash(address or str(rent)))}"[:20]
+
+            if not address and not rent:
+                return None
+
+            features = []
+            if prop_type:
+                features.append(prop_type.lower())
+
+            return ScrapedListing(
+                source_name=self.source_name,
+                source_id=source_id,
+                url=self.base_url,
+                title=address or f"OlyRents Property #{index}",
+                address=address,
+                city=city,
+                state=state or "WA",
+                zip_code=zip_code,
+                rent=rent,
+                bedrooms=bedrooms,
+                bathrooms=bathrooms,
+                sqft=sqft,
+                features=features,
+                image_url=image_url,
+            )
+
+        except Exception as e:
+            print(f"[{self.source_name}] Error parsing list item: {e}")
+            return None
 
     def _parse_detail_view(self, soup: BeautifulSoup, index: int) -> Optional[ScrapedListing]:
         """Parse listing data from the PropertyWare detail view."""
