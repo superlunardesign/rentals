@@ -1,20 +1,21 @@
 """Scraper for Blue Summit Realty property listings.
 
-Uses Playwright browser because the site has bot protection (403 on direct HTTP).
+Tries HTTP first, falls back to browser if needed.
 """
 
 import re
 from urllib.parse import urljoin
+
+import httpx
 from bs4 import BeautifulSoup
 
-from .base import ScrapedListing
-from .browser_scraper import BrowserScraper
+from .base import BaseScraper, ScrapedListing
 
 
-class BlueSummitScraper(BrowserScraper):
-    """Scraper for bluesummitrealty.com rentals using browser."""
+class BlueSummitScraper(BaseScraper):
+    """Scraper for bluesummitrealty.com rentals."""
 
-    def __init__(self, url: str = "https://www.bluesummitrealty.com/property-management/"):
+    def __init__(self, url: str = "https://www.bluesummitrealty.com/rental-listings/"):
         super().__init__(source_name="bluesummit", base_url=url)
 
     def scrape(self) -> list[ScrapedListing]:
@@ -22,80 +23,80 @@ class BlueSummitScraper(BrowserScraper):
         listings = []
 
         try:
-            print(f"[{self.source_name}] Fetching page (browser mode)...")
-            listings = self._run_async(self._scrape_with_browser())
+            print(f"[{self.source_name}] Fetching page via HTTP...")
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+
+            with httpx.Client(timeout=30, follow_redirects=True) as client:
+                response = client.get(self.base_url, headers=headers)
+                print(f"[{self.source_name}] HTTP status: {response.status_code}")
+
+                if response.status_code != 200:
+                    print(f"[{self.source_name}] Failed to fetch page")
+                    return listings
+
+                html = response.text
+                soup = BeautifulSoup(html, "lxml")
+
+                # Debug: show page title
+                title = soup.find("title")
+                print(f"[{self.source_name}] Page title: {title.get_text() if title else 'None'}")
+
+                # Try multiple selectors
+                selectors_to_try = [
+                    "a.teaser__card",
+                    ".teaser__card",
+                    ".property-card",
+                    ".listing-card",
+                    ".rental-listing",
+                    "[class*='teaser']",
+                    "[class*='property']",
+                    "[class*='listing']",
+                    ".card",
+                    "article",
+                ]
+
+                cards = []
+                for sel in selectors_to_try:
+                    found = soup.select(sel)
+                    if found:
+                        print(f"[{self.source_name}] Found {len(found)} with '{sel}'")
+                        if not cards:
+                            cards = found
+
+                if not cards:
+                    # Debug: show sample of page content
+                    all_classes = set()
+                    for el in soup.find_all(class_=True)[:50]:
+                        for cls in el.get('class', []):
+                            all_classes.add(cls)
+                    print(f"[{self.source_name}] Page classes: {list(all_classes)[:30]}")
+
+                    # Show some of the page structure
+                    body = soup.find('body')
+                    if body:
+                        children = [c.name for c in body.children if hasattr(c, 'name') and c.name][:10]
+                        print(f"[{self.source_name}] Body children: {children}")
+
+                for card in cards:
+                    listing = self._parse_card(card)
+                    if listing:
+                        listings.append(listing)
+                        print(f"[{self.source_name}] Parsed: {listing.title[:40] if listing.title else 'Unknown'}... - ${listing.rent or 'N/A'}")
+
             print(f"[{self.source_name}] Total: {len(listings)} listings")
 
         except Exception as e:
             print(f"[{self.source_name}] Error scraping: {e}")
             import traceback
             traceback.print_exc()
-
-        return listings
-
-    async def _scrape_with_browser(self) -> list[ScrapedListing]:
-        """Scrape using Playwright browser."""
-        listings = []
-
-        browser = await self._get_browser_async()
-        page = await browser.new_page()
-
-        try:
-            await page.set_viewport_size({"width": 1920, "height": 1080})
-
-            print(f"[{self.source_name}] Loading page...")
-            await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)  # Wait for JS to render
-
-            # Get page content
-            html = await page.content()
-            soup = BeautifulSoup(html, "lxml")
-
-            # Find all listing cards - try multiple selectors
-            cards = soup.select("a.teaser__card")
-            print(f"[{self.source_name}] Found {len(cards)} cards with 'a.teaser__card'")
-
-            # If none found, try alternative selectors and debug
-            if not cards:
-                # Try other common patterns
-                alt_selectors = [
-                    ".property-card", ".listing-card", ".rental-card",
-                    "[class*='teaser']", "[class*='property']", "[class*='listing']",
-                    ".card", "article", ".property"
-                ]
-                for sel in alt_selectors:
-                    found = soup.select(sel)
-                    if found:
-                        print(f"[{self.source_name}] Found {len(found)} with '{sel}'")
-                        if not cards:
-                            cards = found  # Use first match
-
-                # Debug: show what classes exist on the page
-                all_classes = set()
-                for el in soup.find_all(class_=True):
-                    for cls in el.get('class', []):
-                        all_classes.add(cls)
-                print(f"[{self.source_name}] Page classes (sample): {list(all_classes)[:20]}")
-
-            for card in cards:
-                listing = self._parse_card(card)
-                if listing:
-                    listings.append(listing)
-                    print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-
-        except Exception as e:
-            print(f"[{self.source_name}] Error in browser scraping: {e}")
-            import traceback
-            traceback.print_exc()
-
-        finally:
-            await page.close()
-            if self._browser:
-                await self._browser.close()
-                self._browser = None
-            if self._playwright:
-                await self._playwright.stop()
-                self._playwright = None
 
         return listings
 
