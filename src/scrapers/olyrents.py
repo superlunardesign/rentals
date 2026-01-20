@@ -108,6 +108,7 @@ class OlyrentsScraper(BrowserScraper):
             print(f"[{self.source_name}] Browser closed, parsing HTML...")
 
         # Parse HTML after browser is closed (less memory pressure)
+        images_found = 0
         try:
             soup = BeautifulSoup(html, "lxml")
             list_items = soup.select('.list_item')
@@ -118,11 +119,14 @@ class OlyrentsScraper(BrowserScraper):
                     listing = self._parse_card(item, i)
                     if listing:
                         listings.append(listing)
+                        if listing.image_url:
+                            images_found += 1
                         print(f"[{self.source_name}] Parsed {i+1}/{len(list_items)}: {listing.address or 'Unknown'} - ${listing.rent or 'N/A'}")
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
                 except Exception as e:
                     print(f"[{self.source_name}] Error parsing card {i+1}: {e}")
+            print(f"[{self.source_name}] Images found: {images_found}/{len(listings)}")
         except Exception as e:
             print(f"[{self.source_name}] Error parsing HTML: {e}")
 
