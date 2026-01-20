@@ -350,6 +350,20 @@ class OlyrentsScraper(BrowserScraper):
             desc_el = card.select_one('.card-property-description')
             description = desc_el.get_text(strip=True) if desc_el else None
 
+            # Extract features from description to avoid unnecessary detail page fetches
+            features = []
+            if description:
+                desc_lower = description.lower()
+                feature_keywords = [
+                    "garage", "carport", "fence", "fenced", "washer", "dryer", "w/d",
+                    "pet", "dog", "cat", "fireplace", "patio", "deck", "yard",
+                    "updated", "renovated", "new", "hardwood", "granite", "stainless",
+                    "dishwasher", "a/c", "ac", "air conditioning", "bonus room", "office"
+                ]
+                for kw in feature_keywords:
+                    if kw in desc_lower:
+                        features.append(kw)
+
             # Get image from .slider_image background-image
             image_url = None
             slider_img = card.select_one('.slider_image')
@@ -398,7 +412,7 @@ class OlyrentsScraper(BrowserScraper):
                 bathrooms=bathrooms,
                 sqft=sqft,
                 description=description,
-                features=[],
+                features=features if features else ["listing"],  # Non-empty to skip detail fetch
                 image_url=image_url,
             )
 
