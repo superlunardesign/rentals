@@ -209,13 +209,22 @@ class TelegramNotifier:
                     return True
                 else:
                     print(f"[telegram] Photo API error: {response.status_code} - {response.text}")
-                    # If photo fails, fall back to text-only message
-                    if "wrong file identifier" in response.text.lower() or "failed to get" in response.text.lower():
-                        print(f"[telegram] Photo URL invalid, sending text-only")
-                        return self._send_message(caption)
+                    error_text = response.text.lower()
+
                     # Try again without markdown if parsing failed
-                    if "can't parse" in response.text.lower():
+                    if "can't parse" in error_text:
                         return self._send_plain_photo(photo_url, caption)
+
+                    # If photo fails for any URL/content reason, fall back to text-only
+                    # Common errors: wrong file identifier, failed to get HTTP URL,
+                    # wrong type of web page content (S3 URLs), etc.
+                    if any(err in error_text for err in [
+                        "wrong file", "failed to get", "wrong type",
+                        "bad request", "url", "content"
+                    ]):
+                        print(f"[telegram] Photo URL not accessible, sending text-only")
+                        return self._send_message(caption)
+
                     return False
 
         except Exception as e:
