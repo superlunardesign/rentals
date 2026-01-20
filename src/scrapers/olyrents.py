@@ -87,6 +87,20 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] No listing elements found")
                 return listings
 
+            # Scroll down the page to trigger lazy-loading of images
+            print(f"[{self.source_name}] Scrolling to load all images...")
+            await page.evaluate("""
+                async () => {
+                    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                    for (let i = 0; i < document.body.scrollHeight; i += 500) {
+                        window.scrollTo(0, i);
+                        await delay(100);
+                    }
+                    window.scrollTo(0, 0);
+                }
+            """)
+            await page.wait_for_timeout(1000)  # Wait for images to load
+
             # Get the page HTML
             html = await page.content()
             print(f"[{self.source_name}] Got HTML, closing browser to free memory...")
