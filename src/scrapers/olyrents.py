@@ -51,7 +51,7 @@ class OlyrentsScraper(BrowserScraper):
             await page.set_viewport_size({"width": 1920, "height": 1080})
 
             print(f"[{self.source_name}] Loading page: {self.base_url}")
-            await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
+            await page.goto(self.base_url, wait_until="networkidle", timeout=60000)
 
             # Check where we actually ended up
             final_url = page.url
@@ -64,18 +64,18 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] Detected PropertyWare - using PW selectors")
                 return await self._scrape_propertyware(page)
 
-            # Wait specifically for .list_item elements to appear (up to 30 seconds)
+            # Wait specifically for .list_item elements to appear (up to 60 seconds)
             found_selector = '.list_item'
-            print(f"[{self.source_name}] Waiting for listing elements...")
+            print(f"[{self.source_name}] Waiting for listing elements (up to 60s)...")
             try:
-                await page.wait_for_selector(found_selector, timeout=30000)
+                await page.wait_for_selector(found_selector, timeout=60000)
                 print(f"[{self.source_name}] Listings loaded!")
             except:
                 print(f"[{self.source_name}] Timeout waiting for .list_item - trying page reload...")
                 # Try reloading the page once
-                await page.reload(wait_until="networkidle", timeout=30000)
+                await page.reload(wait_until="networkidle", timeout=60000)
                 try:
-                    await page.wait_for_selector(found_selector, timeout=30000)
+                    await page.wait_for_selector(found_selector, timeout=60000)
                     print(f"[{self.source_name}] Listings loaded after reload!")
                 except:
                     print(f"[{self.source_name}] Still no listings after reload")
