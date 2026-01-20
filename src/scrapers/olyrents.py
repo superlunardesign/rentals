@@ -379,10 +379,15 @@ class OlyrentsScraper(BrowserScraper):
             if not address and not rent:
                 return None
 
+            # Build URL with rent filter to help find the listing
+            listing_url = self.base_url
+            if rent:
+                listing_url = f"https://olyrents.com/properties/?max_rent={rent}"
+
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=self.base_url,
+                url=listing_url,
                 title=title or address or f"OlyRents Property #{index}",
                 address=address,
                 city=city,
