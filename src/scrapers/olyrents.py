@@ -55,9 +55,6 @@ class OlyrentsScraper(BrowserScraper):
             print(f"[{self.source_name}] Loading page: {self.base_url}")
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
 
-            # Wait for JavaScript content to load
-            await page.wait_for_timeout(3000)
-
             # Check where we actually ended up
             final_url = page.url
             title = await page.title()
@@ -69,8 +66,15 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] Detected PropertyWare - using PW selectors")
                 return await self._scrape_propertyware(page)
 
-            # Use the known selector for olyrents.com
+            # Wait specifically for .list_item elements to appear (up to 15 seconds)
             found_selector = '.list_item'
+            print(f"[{self.source_name}] Waiting for listing elements...")
+            try:
+                await page.wait_for_selector(found_selector, timeout=15000)
+                print(f"[{self.source_name}] Listings loaded!")
+            except:
+                print(f"[{self.source_name}] Timeout waiting for .list_item elements")
+
             count = await page.locator(found_selector).count()
             print(f"[{self.source_name}] Found {count} elements with '{found_selector}'")
 
