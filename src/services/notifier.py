@@ -105,6 +105,7 @@ class TelegramNotifier:
         """Format a single listing as a compact line."""
         # Price and address
         price = f"${listing.rent:,}/mo" if listing.rent else "Price N/A"
+        price = self._escape_markdown(price)
         address = self._escape_markdown(listing.title or listing.address or "Unknown")
 
         # Specs
@@ -116,10 +117,10 @@ class TelegramNotifier:
             specs.append(f"{bath_str} ba")
         if listing.sqft:
             specs.append(f"{listing.sqft:,} sq ft")
-        specs_str = ", ".join(specs) if specs else "Specs N/A"
+        specs_str = self._escape_markdown(", ".join(specs) if specs else "Specs N/A")
 
-        # URL
-        url = listing.url or ""
+        # URL - escape for MarkdownV2
+        url = self._escape_markdown(listing.url or "")
 
         return f"*{price}* \\| {address}\n{specs_str}\n{url}"
 
@@ -316,7 +317,7 @@ class TelegramNotifier:
             specs.append(f"{bath_str} ba")
         if listing.sqft:
             specs.append(f"{listing.sqft:,} sq ft")
-        specs_str = ", ".join(specs) if specs else "Specs N/A"
+        specs_str = self._escape_markdown(", ".join(specs) if specs else "Specs N/A")
 
         lines = [
             "💰 *Price Drop\\!*",
