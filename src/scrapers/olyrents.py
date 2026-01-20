@@ -69,8 +69,14 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] Detected PropertyWare - using PW selectors")
                 return await self._scrape_propertyware(page)
 
-            # Otherwise try main site selectors
-            selectors_to_try = ['.list_item', '.card', '.property-card', '.listing']
+            # Otherwise try main site selectors - expanded list
+            selectors_to_try = [
+                '.list_item', '.list-item', 'div.list_item', 'article.list_item',
+                '.card', '.property-card', '.listing', '.listing-card',
+                '.property', '.property-item', '[class*="property"]',
+                '[class*="listing"]', '[class*="card"]',
+                '.item', 'article', '.entry'
+            ]
 
             found_selector = None
             for selector in selectors_to_try:
@@ -84,7 +90,19 @@ class OlyrentsScraper(BrowserScraper):
                     continue
 
             if not found_selector:
-                print(f"[{self.source_name}] No listing elements found")
+                print(f"[{self.source_name}] No listing elements found with standard selectors")
+                # Dump part of the HTML for debugging
+                html = await page.content()
+                soup = BeautifulSoup(html, "lxml")
+                body = soup.body
+                if body:
+                    # Find all elements with class attributes
+                    elements_with_class = body.find_all(attrs={"class": True})[:30]
+                    classes_found = set()
+                    for el in elements_with_class:
+                        for cls in el.get("class", []):
+                            classes_found.add(cls)
+                    print(f"[{self.source_name}] Classes on page: {sorted(classes_found)[:50]}")
                 return listings
 
             # Get the page HTML and parse
