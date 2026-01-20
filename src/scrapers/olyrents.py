@@ -4,6 +4,7 @@ Uses Playwright browser to render PropertyWare JavaScript content.
 Clicks through each listing detail view for complete data.
 """
 
+import asyncio
 import re
 from typing import Optional
 from urllib.parse import urljoin
@@ -222,8 +223,14 @@ class OlyrentsScraper(BrowserScraper):
                         # Try to navigate to next
                         if i < listing_count - 1:
                             print(f"[{self.source_name}] Calling gotoNextBuilding()...")
-                            await page.evaluate("gotoNextBuilding()")
-                            await page.wait_for_timeout(2000)
+                            try:
+                                await asyncio.wait_for(
+                                    page.evaluate("gotoNextBuilding()"),
+                                    timeout=5.0
+                                )
+                            except asyncio.TimeoutError:
+                                print(f"[{self.source_name}] Navigation timed out, trying to continue...")
+                            await page.wait_for_timeout(1500)
                         continue
 
                     # Check for duplicate (we've cycled back to start)
@@ -244,16 +251,25 @@ class OlyrentsScraper(BrowserScraper):
                     # Navigate to next listing (unless this is the last one)
                     if i < listing_count - 1:
                         print(f"[{self.source_name}] Navigating to next listing...")
-                        await page.evaluate("gotoNextBuilding()")
-                        # Simple fixed wait - more reliable than detecting address change
-                        await page.wait_for_timeout(2000)
+                        try:
+                            await asyncio.wait_for(
+                                page.evaluate("gotoNextBuilding()"),
+                                timeout=5.0
+                            )
+                        except asyncio.TimeoutError:
+                            print(f"[{self.source_name}] Navigation timed out, trying to continue...")
+                        # Wait for content to update
+                        await page.wait_for_timeout(1500)
 
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i+1}: {e}")
                     # Try to continue to next
                     try:
-                        await page.evaluate("gotoNextBuilding()")
-                        await page.wait_for_timeout(2000)
+                        await asyncio.wait_for(
+                            page.evaluate("gotoNextBuilding()"),
+                            timeout=5.0
+                        )
+                        await page.wait_for_timeout(1500)
                     except:
                         pass
                     continue
