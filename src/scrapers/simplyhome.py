@@ -164,9 +164,19 @@ class SimplyHomeScraper(BrowserScraper):
                     address_el = soup.select_one("#pw_listing_widget_tabs_detail_address")
                     current_address = address_el.get_text(strip=True) if address_el else ""
 
+                    # Skip empty addresses (page didn't load)
+                    if not current_address or len(current_address) < 5:
+                        print(f"[{self.source_name}] Empty address on iteration {i+1}, skipping...")
+                        # Try to navigate to next
+                        if i < listing_count - 1:
+                            print(f"[{self.source_name}] Calling gotoNextBuilding()...")
+                            await page.evaluate("gotoNextBuilding()")
+                            await page.wait_for_timeout(2000)
+                        continue
+
                     # Check for duplicate (we've cycled back to start)
                     if current_address in seen_addresses:
-                        print(f"[{self.source_name}] Cycled back to seen address, stopping...")
+                        print(f"[{self.source_name}] Cycled back to seen address ({current_address[:30]}...), stopping...")
                         break
                     seen_addresses.add(current_address)
 
@@ -181,31 +191,17 @@ class SimplyHomeScraper(BrowserScraper):
 
                     # Navigate to next listing (unless this is the last one)
                     if i < listing_count - 1:
+                        print(f"[{self.source_name}] Navigating to next listing...")
                         await page.evaluate("gotoNextBuilding()")
-                        await page.wait_for_timeout(1000)
-
-                        # Wait for address to change
-                        try:
-                            escaped_addr = current_address.replace('"', '\\"').replace('\n', ' ')
-                            await page.wait_for_function(
-                                f"""() => {{
-                                    const el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                                    if (!el) return false;
-                                    const addr = el.textContent.trim();
-                                    return addr.length > 5 && addr !== "{escaped_addr}";
-                                }}""",
-                                timeout=5000
-                            )
-                        except:
-                            # Give it a bit more time
-                            await page.wait_for_timeout(500)
+                        # Simple fixed wait - more reliable than detecting address change
+                        await page.wait_for_timeout(2000)
 
                 except Exception as e:
                     print(f"[{self.source_name}] Error on listing {i+1}: {e}")
                     # Try to continue to next
                     try:
                         await page.evaluate("gotoNextBuilding()")
-                        await page.wait_for_timeout(1000)
+                        await page.wait_for_timeout(2000)
                     except:
                         pass
                     continue
