@@ -61,8 +61,32 @@ class SimplyHomeScraper(BrowserScraper):
                 await page.wait_for_selector('.nhw-list__item', timeout=10000)
                 print(f"[{self.source_name}] Listings container found")
             except:
-                print(f"[{self.source_name}] No listings found on page")
-                return listings
+                print(f"[{self.source_name}] Primary selector not found, trying alternatives...")
+                # Try alternative selectors
+                found = False
+                for selector in ['.property-item', '.listing', '[class*="list"]', '[class*="property"]', 'article']:
+                    try:
+                        count = await page.locator(selector).count()
+                        if count > 0:
+                            print(f"[{self.source_name}] Found {count} elements with '{selector}'")
+                            found = True
+                            break
+                    except:
+                        continue
+                if not found:
+                    # Dump classes for debugging
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "lxml")
+                    body = soup.body
+                    if body:
+                        elements_with_class = body.find_all(attrs={"class": True})[:30]
+                        classes_found = set()
+                        for el in elements_with_class:
+                            for cls in el.get("class", []):
+                                classes_found.add(cls)
+                        print(f"[{self.source_name}] Classes on page: {sorted(classes_found)[:50]}")
+                    print(f"[{self.source_name}] No listings found on page")
+                    return listings
 
             # Get the page HTML
             html = await page.content()
