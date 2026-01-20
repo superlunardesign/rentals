@@ -97,8 +97,14 @@ class OlyrentsScraper(BrowserScraper):
             traceback.print_exc()
             return listings
         finally:
-            # Close browser BEFORE parsing to free memory
+            # Close page AND browser to free memory
             await page.close()
+            if self._browser:
+                await self._browser.close()
+                self._browser = None
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
             print(f"[{self.source_name}] Browser closed, parsing HTML...")
 
         # Parse HTML after browser is closed (less memory pressure)
