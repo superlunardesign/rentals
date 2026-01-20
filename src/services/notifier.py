@@ -119,10 +119,11 @@ class TelegramNotifier:
             specs.append(f"{listing.sqft:,} sq ft")
         specs_str = self._escape_markdown(", ".join(specs) if specs else "Specs N/A")
 
-        # URL - escape for MarkdownV2
-        url = self._escape_markdown(listing.url or "")
+        # URL - use markdown link format (URLs inside links don't need escaping)
+        url = listing.url or ""
+        url_line = f"[View Listing]({url})" if url else ""
 
-        return f"*{price}* \\| {address}\n{specs_str}\n{url}"
+        return f"*{price}* \\| {address}\n{specs_str}\n{url_line}"
 
     def _format_listing_message(self, listing: Listing) -> str:
         """Format a single listing into a Telegram message (for individual notifications)."""
