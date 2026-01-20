@@ -215,21 +215,71 @@ class TelegramNotifier:
                     if "can't parse" in error_text:
                         return self._send_plain_photo(photo_url, caption)
 
-                    # If photo fails for any URL/content reason, fall back to text-only
-                    # Common errors: wrong file identifier, failed to get HTTP URL,
-                    # wrong type of web page content (S3 URLs), etc.
+                    # If photo URL fails, try downloading and uploading as file
                     if any(err in error_text for err in [
                         "wrong file", "failed to get", "wrong type",
                         "bad request", "url", "content"
                     ]):
-                        print(f"[telegram] Photo URL not accessible, sending text-only")
-                        return self._send_message(caption)
+                        print(f"[telegram] URL failed, trying download and upload...")
+                        return self._download_and_send_photo(photo_url, caption)
 
                     return False
 
         except Exception as e:
             print(f"[telegram] Photo request error: {e}")
             # Fall back to text-only
+            return self._send_message(caption)
+
+    def _download_and_send_photo(self, photo_url: str, caption: str) -> bool:
+        """Download image and upload to Telegram as file (for S3/protected URLs)."""
+        try:
+            # Download the image
+            with httpx.Client(timeout=15, follow_redirects=True) as client:
+                img_response = client.get(photo_url)
+                if img_response.status_code != 200:
+                    print(f"[telegram] Failed to download image: {img_response.status_code}")
+                    return self._send_message(caption)
+
+                image_data = img_response.content
+                content_type = img_response.headers.get("content-type", "image/jpeg")
+
+                # Determine file extension
+                if "png" in content_type:
+                    ext = "png"
+                elif "gif" in content_type:
+                    ext = "gif"
+                else:
+                    ext = "jpg"
+
+                # Upload to Telegram as multipart file
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+                files = {"photo": (f"image.{ext}", image_data, content_type)}
+                data = {
+                    "chat_id": self.chat_id,
+                    "caption": caption,
+                    "parse_mode": "MarkdownV2",
+                }
+
+                response = client.post(url, files=files, data=data)
+
+                if response.status_code == 200:
+                    print(f"[telegram] Photo uploaded successfully")
+                    return True
+                else:
+                    print(f"[telegram] Photo upload error: {response.status_code} - {response.text}")
+                    # If markdown parsing failed, try plain
+                    if "can't parse" in response.text.lower():
+                        plain_caption = caption.replace('*', '').replace('_', '').replace('\\', '')
+                        response = client.post(url, files=files, data={
+                            "chat_id": self.chat_id,
+                            "caption": plain_caption,
+                        })
+                        if response.status_code == 200:
+                            return True
+                    return self._send_message(caption)
+
+        except Exception as e:
+            print(f"[telegram] Download/upload error: {e}")
             return self._send_message(caption)
 
     def _send_plain_photo(self, photo_url: str, caption: str) -> bool:
