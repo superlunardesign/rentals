@@ -132,28 +132,38 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] No listing elements found")
                 return listings
 
-            # Get the page HTML and parse
+            # Get the page HTML
             html = await page.content()
+            print(f"[{self.source_name}] Got HTML, closing browser to free memory...")
+
+        except Exception as e:
+            print(f"[{self.source_name}] Error scraping: {e}")
+            import traceback
+            traceback.print_exc()
+            return listings
+        finally:
+            # Close browser BEFORE parsing to free memory
+            await page.close()
+            print(f"[{self.source_name}] Browser closed, parsing HTML...")
+
+        # Parse HTML after browser is closed (less memory pressure)
+        try:
             soup = BeautifulSoup(html, "lxml")
-            list_items = soup.select(found_selector)
+            list_items = soup.select('.list_item')
+            print(f"[{self.source_name}] Parsing {len(list_items)} listings...")
 
             for i, item in enumerate(list_items):
                 try:
                     listing = self._parse_card(item, i)
                     if listing:
                         listings.append(listing)
-                        print(f"[{self.source_name}] Parsed {i+1}/{len(list_items)}: {listing.address or listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                        print(f"[{self.source_name}] Parsed {i+1}/{len(list_items)}: {listing.address or 'Unknown'} - ${listing.rent or 'N/A'}")
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
                 except Exception as e:
                     print(f"[{self.source_name}] Error parsing card {i+1}: {e}")
-
         except Exception as e:
-            print(f"[{self.source_name}] Error scraping: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            await page.close()
+            print(f"[{self.source_name}] Error parsing HTML: {e}")
 
         return listings
 
