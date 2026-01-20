@@ -335,6 +335,8 @@ class OlyrentsScraper(BrowserScraper):
                 img_match = re.search(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
                 if img_match:
                     image_url = img_match.group(1)
+                    if index == 0:  # Only log first one to avoid spam
+                        print(f"[{self.source_name}] Image URL found: {image_url[:60]}...")
 
             # Parse city/state/zip from address
             city, state, zip_code = None, None, None
