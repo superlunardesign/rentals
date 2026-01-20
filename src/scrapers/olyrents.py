@@ -18,7 +18,7 @@ class OlyrentsScraper(BrowserScraper):
     in a clean card-based layout.
     """
 
-    def __init__(self, url: str = "https://olyrents.com/properties/olympia/"):
+    def __init__(self, url: str = "https://olyrents.com/properties/"):
         super().__init__(source_name="olyrents", base_url=url)
         self._on_listing_callback = None
 
