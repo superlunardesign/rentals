@@ -162,34 +162,80 @@ class SimplyHomeScraper(BrowserScraper):
             js_listings = listing_data.get('listings', [])
             print(f"[{self.source_name}] Found {len(js_listings)} listings from JavaScript")
 
-            # If we have data from JavaScript, use it
-            for i, data in enumerate(js_listings):
-                try:
-                    # If we don't have address, we need to get it from detail view
-                    address = data.get('address', '')
-                    if not address and 'index' in data:
-                        # Quick detail view fetch for address only
-                        try:
-                            await page.evaluate(f"gotoDetail({data['index']})")
-                            await page.wait_for_timeout(1000)
-                            address = await page.evaluate("""
-                                () => {
-                                    let el = document.querySelector('#pw_listing_widget_tabs_detail_address');
-                                    return el ? el.innerText.trim() : '';
-                                }
-                            """)
-                        except:
-                            address = f"Listing #{i+1}"
+            # Check if we got addresses from JavaScript
+            has_addresses = any(data.get('address') for data in js_listings)
 
-                    listing = self._create_listing_from_data(data, address, i)
-                    if listing:
-                        listings.append(listing)
-                        print(f"[{self.source_name}] Parsed {i+1}/{len(js_listings)}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-                        if self._on_listing_callback:
-                            self._on_listing_callback(listing)
+            if has_addresses:
+                # Great - we have all data from JavaScript
+                for i, data in enumerate(js_listings):
+                    try:
+                        address = data.get('address', '')
+                        listing = self._create_listing_from_data(data, address, i)
+                        if listing:
+                            listings.append(listing)
+                            print(f"[{self.source_name}] Parsed {i+1}/{len(js_listings)}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                            if self._on_listing_callback:
+                                self._on_listing_callback(listing)
+                    except Exception as e:
+                        print(f"[{self.source_name}] Error processing listing {i+1}: {e}")
+                        continue
+            else:
+                # Need to navigate detail views to get addresses
+                # First activate the Detail tab by clicking its link
+                print(f"[{self.source_name}] Activating Detail tab for navigation...")
+                try:
+                    await page.click('#pw_listing_widget_tabs_detail_link')
+                    await page.wait_for_timeout(1500)
                 except Exception as e:
-                    print(f"[{self.source_name}] Error processing listing {i+1}: {e}")
-                    continue
+                    print(f"[{self.source_name}] Could not activate Detail tab: {e}")
+                    return listings
+
+                # Now iterate through listings using gotoNextBuilding()
+                total_listings = len(js_listings)
+                for i in range(total_listings):
+                    try:
+                        # Get current detail view data
+                        detail_data = await page.evaluate("""
+                            () => {
+                                let address = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                                let price = document.querySelector('#pw_listing_widget_tabs_detail_price');
+                                let bed = document.querySelector('#pw_listing_widget_tabs_detail_bed');
+                                let bath = document.querySelector('#pw_listing_widget_tabs_detail_bath');
+                                let area = document.querySelector('#pw_listing_widget_tabs_detail_area');
+                                let type = document.querySelector('#pw_listing_widget_tabs_detail_type');
+                                let desc = document.querySelector('#pw_listing_widget_tabs_detail_description_p');
+                                let img = document.querySelector('#pw_listing_widget_tabs_detail_image');
+
+                                return {
+                                    address: address ? address.innerText.trim() : '',
+                                    rent: price ? price.innerText.trim() : '',
+                                    beds: bed ? bed.innerText.trim() : '',
+                                    baths: bath ? bath.innerText.trim() : '',
+                                    sqft: area ? area.innerText.trim() : '',
+                                    type: type ? type.innerText.trim() : '',
+                                    description: desc ? desc.innerText.trim() : '',
+                                    image: img ? img.src : ''
+                                };
+                            }
+                        """)
+
+                        address = detail_data.get('address', '')
+                        if address:
+                            listing = self._create_listing_from_data(detail_data, address, i)
+                            if listing:
+                                listings.append(listing)
+                                print(f"[{self.source_name}] Parsed {i+1}/{total_listings}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                                if self._on_listing_callback:
+                                    self._on_listing_callback(listing)
+
+                        # Navigate to next listing (except for last one)
+                        if i < total_listings - 1:
+                            await page.evaluate("gotoNextBuilding()")
+                            await page.wait_for_timeout(1000)
+
+                    except Exception as e:
+                        print(f"[{self.source_name}] Error processing listing {i+1}: {e}")
+                        continue
 
         except Exception as e:
             print(f"[{self.source_name}] Error scraping list view: {e}")
