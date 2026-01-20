@@ -54,23 +54,52 @@ class OlyrentsScraper(BrowserScraper):
 
             print(f"[{self.source_name}] Loading page...")
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)
 
-            # Wait for listing cards to load
-            print(f"[{self.source_name}] Waiting for listings to load...")
-            try:
-                await page.wait_for_selector('.list_item', timeout=10000)
-                print(f"[{self.source_name}] Listings container found")
-            except:
-                print(f"[{self.source_name}] No listings found on page")
+            # Wait longer for JavaScript content to load
+            await page.wait_for_timeout(5000)
+
+            # Debug: print page title and URL to verify we're on the right page
+            title = await page.title()
+            url = page.url
+            print(f"[{self.source_name}] Page loaded: {title} ({url})")
+
+            # Try multiple selectors
+            selectors_to_try = ['.list_item', '.card', '.property-card', '.listing', '[class*="list"]']
+
+            found_selector = None
+            for selector in selectors_to_try:
+                try:
+                    await page.wait_for_selector(selector, timeout=3000)
+                    count = await page.locator(selector).count()
+                    if count > 0:
+                        print(f"[{self.source_name}] Found {count} elements with selector '{selector}'")
+                        found_selector = selector
+                        break
+                except:
+                    continue
+
+            if not found_selector:
+                # Debug: dump some page info
+                html = await page.content()
+                print(f"[{self.source_name}] Page length: {len(html)} chars")
+                # Print first 500 chars of body
+                soup = BeautifulSoup(html, "lxml")
+                body = soup.find('body')
+                if body:
+                    body_text = body.get_text()[:500]
+                    print(f"[{self.source_name}] Body preview: {body_text[:200]}...")
+                    # Find all divs with class attributes
+                    divs_with_class = soup.find_all('div', class_=True)[:10]
+                    classes = [' '.join(d.get('class', [])) for d in divs_with_class]
+                    print(f"[{self.source_name}] Sample div classes: {classes}")
                 return listings
 
             # Get the page HTML
             html = await page.content()
             soup = BeautifulSoup(html, "lxml")
 
-            # Find all listing cards
-            list_items = soup.select('.list_item')
+            # Find all listing cards using the selector that worked
+            list_items = soup.select(found_selector)
             print(f"[{self.source_name}] Found {len(list_items)} listing cards")
 
             for i, item in enumerate(list_items):
