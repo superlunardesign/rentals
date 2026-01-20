@@ -107,19 +107,43 @@ class OlyrentsScraper(BrowserScraper):
                     const cards = document.querySelectorAll('.list_item');
                     const urls = [];
                     cards.forEach(card => {
+                        let url = null;
+
+                        // Try 1: slider_image inline style
                         const sliderImg = card.querySelector('.slider_image');
                         if (sliderImg) {
                             const style = sliderImg.style.backgroundImage;
                             const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
-                            urls.push(match ? match[1] : null);
-                        } else {
-                            urls.push(null);
+                            if (match) url = match[1];
                         }
+
+                        // Try 2: computed style if inline didn't work
+                        if (!url && sliderImg) {
+                            const computed = window.getComputedStyle(sliderImg).backgroundImage;
+                            const match = computed.match(/url\\(["']?([^"')]+)["']?\\)/);
+                            if (match) url = match[1];
+                        }
+
+                        // Try 3: img tag inside the card
+                        if (!url) {
+                            const img = card.querySelector('img');
+                            if (img && img.src) url = img.src;
+                        }
+
+                        // Try 4: data-src or data-bg attribute (lazy loading)
+                        if (!url && sliderImg) {
+                            url = sliderImg.getAttribute('data-src') || sliderImg.getAttribute('data-bg');
+                        }
+
+                        urls.push(url);
                     });
                     return urls;
                 }
             """)
-            print(f"[{self.source_name}] Extracted {len([u for u in image_urls if u])} image URLs via JS")
+            valid_urls = [u for u in image_urls if u]
+            print(f"[{self.source_name}] Extracted {len(valid_urls)} image URLs via JS")
+            if valid_urls:
+                print(f"[{self.source_name}] Sample image URL: {valid_urls[0][:80]}...")
 
             # Get the page HTML
             html = await page.content()
