@@ -4,6 +4,7 @@ Uses their main website which has a cleaner HTML structure than PropertyWare.
 """
 
 import re
+import httpx
 from typing import Optional
 from bs4 import BeautifulSoup, Tag
 
@@ -15,7 +16,7 @@ class OlyrentsScraper(BrowserScraper):
     """Scraper for olyrents.com property listings.
 
     Uses their main website at /properties/ which has all listing data
-    in a clean card-based layout.
+    in a clean card-based layout. Tries fast HTTP first, falls back to browser.
     """
 
     def __init__(self, url: str = "https://olyrents.com/properties/"):
@@ -27,18 +28,67 @@ class OlyrentsScraper(BrowserScraper):
         self._on_listing_callback = callback
 
     def scrape(self) -> list[ScrapedListing]:
-        """Scrape all listings from the main website."""
+        """Scrape all listings - try HTTP first, fall back to browser."""
         listings = []
 
+        # Try fast HTTP scraping first
+        print(f"[{self.source_name}] Trying fast HTTP scrape...")
+        listings = self._try_http_scrape()
+
+        if listings:
+            print(f"[{self.source_name}] HTTP scrape successful! Found {len(listings)} listings")
+            return listings
+
+        # Fall back to browser if HTTP didn't work
+        print(f"[{self.source_name}] HTTP scrape failed, falling back to browser...")
         try:
-            print(f"[{self.source_name}] Fetching main website...")
             listings = self._run_async(self._scrape_main_site())
             print(f"[{self.source_name}] Found {len(listings)} listings")
-
         except Exception as e:
             print(f"[{self.source_name}] Error scraping: {e}")
             import traceback
             traceback.print_exc()
+
+        return listings
+
+    def _try_http_scrape(self) -> list[ScrapedListing]:
+        """Try to scrape using simple HTTP request."""
+        listings = []
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+
+            with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
+                response = client.get(self.base_url)
+                response.raise_for_status()
+
+                soup = BeautifulSoup(response.text, "lxml")
+                list_items = soup.select('.list_item')
+
+                if not list_items:
+                    print(f"[{self.source_name}] HTTP: No .list_item elements found")
+                    return []
+
+                print(f"[{self.source_name}] HTTP: Found {len(list_items)} listing elements")
+
+                for i, item in enumerate(list_items):
+                    listing = self._parse_card(item, i)
+                    if listing:
+                        listings.append(listing)
+                        print(f"[{self.source_name}] Parsed {i+1}/{len(list_items)}: {listing.address or 'No address'} - ${listing.rent or 'N/A'}")
+                        if self._on_listing_callback:
+                            self._on_listing_callback(listing)
+
+        except Exception as e:
+            print(f"[{self.source_name}] HTTP scrape error: {e}")
+            return []
 
         return listings
 
