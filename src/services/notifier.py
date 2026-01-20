@@ -82,7 +82,12 @@ class TelegramNotifier:
         try:
             print(f"[telegram] Sending notification for: {listing.title}")
             message = self._format_listing_message(listing)
-            return self._send_message(message)
+
+            # If listing has an image, send as photo with caption
+            if listing.image_url:
+                return self._send_photo(listing.image_url, message)
+            else:
+                return self._send_message(message)
         except Exception as e:
             print(f"[telegram] Error sending notification: {e}")
             return False
@@ -180,6 +185,60 @@ class TelegramNotifier:
             print(f"[telegram] Request error: {e}")
             return False
 
+    def _send_photo(self, photo_url: str, caption: str) -> bool:
+        """Send a photo with caption via Telegram API."""
+        if not self.bot_token or not self.chat_id:
+            return False
+
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                response = client.post(url, json={
+                    "chat_id": self.chat_id,
+                    "photo": photo_url,
+                    "caption": caption,
+                    "parse_mode": "MarkdownV2",
+                })
+
+                if response.status_code == 200:
+                    print(f"[telegram] Photo notification sent successfully")
+                    return True
+                else:
+                    print(f"[telegram] Photo API error: {response.status_code} - {response.text}")
+                    # If photo fails, fall back to text-only message
+                    if "wrong file identifier" in response.text.lower() or "failed to get" in response.text.lower():
+                        print(f"[telegram] Photo URL invalid, sending text-only")
+                        return self._send_message(caption)
+                    # Try again without markdown if parsing failed
+                    if "can't parse" in response.text.lower():
+                        return self._send_plain_photo(photo_url, caption)
+                    return False
+
+        except Exception as e:
+            print(f"[telegram] Photo request error: {e}")
+            # Fall back to text-only
+            return self._send_message(caption)
+
+    def _send_plain_photo(self, photo_url: str, caption: str) -> bool:
+        """Fallback: send photo without markdown parsing."""
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+        plain_caption = caption.replace('*', '').replace('_', '').replace('\\', '')
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                response = client.post(url, json={
+                    "chat_id": self.chat_id,
+                    "photo": photo_url,
+                    "caption": plain_caption,
+                })
+                if response.status_code == 200:
+                    return True
+                # If photo still fails, try text only
+                return self._send_plain_message(caption)
+        except:
+            return self._send_plain_message(caption)
+
     def _send_plain_message(self, message: str) -> bool:
         """Fallback: send without markdown parsing."""
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -225,7 +284,12 @@ class TelegramNotifier:
         try:
             message = self._format_price_drop_message(price_drop)
             print(f"[telegram] Sending price drop notification: {listing.title[:30]}...")
-            return self._send_message(message)
+
+            # If listing has an image, send as photo with caption
+            if listing.image_url:
+                return self._send_photo(listing.image_url, message)
+            else:
+                return self._send_message(message)
         except Exception as e:
             print(f"[telegram] Error sending price drop notification: {e}")
             return False
