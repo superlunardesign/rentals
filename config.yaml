@@ -110,12 +110,12 @@ sources:
   # --- Slow browser-based scrapers (run last) ---
   - name: "Olympic Landlord & Rental Services"
     scraper: "olyrents"
-    url: "https://olyrents.propertyware.com/"
+    url: "https://olyrents.com/properties/"
     enabled: true
 
   - name: "Simply Home Realty"
     scraper: "simplyhome"
-    url: "https://simplyhomerealtyllc.propertyware.com/rentals.html?addr=olympia&max=2800"
+    url: "https://www.simplyhomerealty.com/lacey-homes-for-rent"
     enabled: true
 
   - name: "Blue Summit Realty"
