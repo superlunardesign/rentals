@@ -330,13 +330,19 @@ class OlyrentsScraper(BrowserScraper):
             slider_img = card.select_one('.slider_image')
             if slider_img:
                 style = slider_img.get('style', '')
+                if index == 0:
+                    print(f"[{self.source_name}] DEBUG: slider_image style = {style[:100]}...")
                 # Handle both regular quotes and HTML-encoded quotes (&quot;)
                 style = style.replace('&quot;', '"')
                 img_match = re.search(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
                 if img_match:
                     image_url = img_match.group(1)
-                    if index == 0:  # Only log first one to avoid spam
+                    if index == 0:
                         print(f"[{self.source_name}] Image URL found: {image_url[:60]}...")
+                elif index == 0:
+                    print(f"[{self.source_name}] DEBUG: No image match in style")
+            elif index == 0:
+                print(f"[{self.source_name}] DEBUG: No .slider_image found in card")
 
             # Parse city/state/zip from address
             city, state, zip_code = None, None, None

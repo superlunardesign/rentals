@@ -114,13 +114,33 @@ class SimplyHomeScraper(BrowserScraper):
             traceback.print_exc()
 
         finally:
+            # Close page AND browser to free memory
             await page.close()
+            if self._browser:
+                await self._browser.close()
+                self._browser = None
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
 
         return listings
 
     def _parse_item(self, item: Tag, index: int) -> Optional[ScrapedListing]:
         """Parse a listing item from the main website."""
         try:
+            # Get listing URL from the main link
+            listing_url = self.base_url
+            link_el = item.select_one('a[href*="/_system/listings/"]') or item.select_one('a[href]')
+            if link_el:
+                href = link_el.get('href', '')
+                if href:
+                    if href.startswith('/'):
+                        listing_url = f"https://www.simplyhomerealty.com{href}"
+                    elif href.startswith('http'):
+                        listing_url = href
+                    if index == 0:
+                        print(f"[{self.source_name}] Listing URL found: {listing_url[:60]}...")
+
             # Get address from .nhw-list__location
             location_el = item.select_one('.nhw-list__location')
             address = location_el.get_text(strip=True) if location_el else None
@@ -193,7 +213,7 @@ class SimplyHomeScraper(BrowserScraper):
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=source_id,
-                url=self.base_url,
+                url=listing_url,
                 title=address or f"SimplyHome Property #{index}",
                 address=address,
                 city=city,
