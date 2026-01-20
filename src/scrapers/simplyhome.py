@@ -49,7 +49,7 @@ class SimplyHomeScraper(BrowserScraper):
         return listings
 
     async def _scrape_with_detail_views(self) -> list[ScrapedListing]:
-        """Scrape listings from the list view (faster and more reliable)."""
+        """Scrape listings using JavaScript data extraction."""
         listings = []
 
         browser = await self._get_browser_async()
@@ -74,27 +74,121 @@ class SimplyHomeScraper(BrowserScraper):
             # Give it more time for content to populate
             await page.wait_for_timeout(2000)
 
-            # Get the full page HTML and parse list view
-            html = await page.content()
-            soup = BeautifulSoup(html, "lxml")
+            # Try to get listing data directly from PropertyWare's JavaScript
+            print(f"[{self.source_name}] Extracting listing data from JavaScript...")
+            listing_data = await page.evaluate("""
+                () => {
+                    // Try to get data from PropertyWare's internal state
+                    if (typeof pw_listing_widget !== 'undefined') {
+                        let listings = [];
 
-            # Find all visible listing items in the list view
-            list_items = soup.select('li.pw_listing_widget_tabs_list_item')
-            visible_items = [item for item in list_items if 'display: none' not in item.get('style', '')]
+                        // Try different data sources
+                        let source = null;
+                        if (pw_listing_widget.listings) {
+                            source = pw_listing_widget.listings;
+                        } else if (pw_listing_widget.data && pw_listing_widget.data.listings) {
+                            source = pw_listing_widget.data.listings;
+                        } else if (pw_listing_widget.listingData) {
+                            source = Object.values(pw_listing_widget.listingData);
+                        }
 
-            print(f"[{self.source_name}] Found {len(visible_items)} listings in list view")
+                        if (source) {
+                            for (let item of source) {
+                                listings.push({
+                                    address: item.address || item.streetAddress || item.fullAddress || '',
+                                    city: item.city || '',
+                                    state: item.state || 'WA',
+                                    zip: item.zip || item.postalCode || '',
+                                    rent: item.rent || item.targetRent || item.marketRent || 0,
+                                    beds: item.bedrooms || item.beds || 0,
+                                    baths: item.bathrooms || item.baths || 0,
+                                    sqft: item.sqft || item.area || item.totalArea || 0,
+                                    type: item.type || item.unitType || '',
+                                    description: item.description || '',
+                                    image: item.image || item.imageUrl || item.primaryImage || '',
+                                    id: item.id || item.unitId || ''
+                                });
+                            }
+                            return { success: true, listings: listings, source: 'pw_listing_widget' };
+                        }
+                    }
 
-            for i, item in enumerate(visible_items):
+                    // Fallback: parse from visible list items
+                    let listings = [];
+                    document.querySelectorAll('li.pw_listing_widget_tabs_list_item').forEach((li, idx) => {
+                        if (li.style.display === 'none') return;
+
+                        let listing = { index: idx };
+
+                        // Get image
+                        let img = li.querySelector('img.pw_listing_widget_tabs_list_item_img');
+                        if (img) listing.image = img.src;
+
+                        // Parse the description table
+                        let descTd = li.querySelector('.listItemDescTd');
+                        if (descTd) {
+                            let text = descTd.innerText;
+
+                            // Extract rent
+                            let rentMatch = text.match(/Monthly Rent:\\s*\\$([\\d,]+)/);
+                            if (rentMatch) listing.rent = parseInt(rentMatch[1].replace(',', ''));
+
+                            // Extract BR
+                            let brMatch = text.match(/BR:\\s*(\\d+)/);
+                            if (brMatch) listing.beds = parseInt(brMatch[1]);
+
+                            // Extract BA
+                            let baMatch = text.match(/BA:\\s*([\\d.]+)/);
+                            if (baMatch) listing.baths = parseFloat(baMatch[1]);
+
+                            // Extract type
+                            let typeMatch = text.match(/Type:\\s*([^\\n]+)/);
+                            if (typeMatch) listing.type = typeMatch[1].trim();
+
+                            // Get description paragraph
+                            let p = descTd.querySelector('p');
+                            if (p) listing.description = p.innerText.trim();
+                        }
+
+                        listings.push(listing);
+                    });
+
+                    return { success: true, listings: listings, source: 'dom_parsing' };
+                }
+            """)
+
+            print(f"[{self.source_name}] Data source: {listing_data.get('source', 'unknown')}")
+
+            js_listings = listing_data.get('listings', [])
+            print(f"[{self.source_name}] Found {len(js_listings)} listings from JavaScript")
+
+            # If we have data from JavaScript, use it
+            for i, data in enumerate(js_listings):
                 try:
-                    listing = self._parse_list_item(item, i)
+                    # If we don't have address, we need to get it from detail view
+                    address = data.get('address', '')
+                    if not address and 'index' in data:
+                        # Quick detail view fetch for address only
+                        try:
+                            await page.evaluate(f"gotoDetail({data['index']})")
+                            await page.wait_for_timeout(1000)
+                            address = await page.evaluate("""
+                                () => {
+                                    let el = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                                    return el ? el.innerText.trim() : '';
+                                }
+                            """)
+                        except:
+                            address = f"Listing #{i+1}"
+
+                    listing = self._create_listing_from_data(data, address, i)
                     if listing:
                         listings.append(listing)
-                        print(f"[{self.source_name}] Parsed {i+1}/{len(visible_items)}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-                        # Call callback to save immediately
+                        print(f"[{self.source_name}] Parsed {i+1}/{len(js_listings)}: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
                         if self._on_listing_callback:
                             self._on_listing_callback(listing)
                 except Exception as e:
-                    print(f"[{self.source_name}] Error parsing list item {i+1}: {e}")
+                    print(f"[{self.source_name}] Error processing listing {i+1}: {e}")
                     continue
 
         except Exception as e:
@@ -106,6 +200,81 @@ class SimplyHomeScraper(BrowserScraper):
             await page.close()
 
         return listings
+
+    def _create_listing_from_data(self, data: dict, address: str, index: int) -> Optional[ScrapedListing]:
+        """Create a ScrapedListing from JavaScript-extracted data."""
+        try:
+            rent = data.get('rent')
+            if isinstance(rent, str):
+                rent = int(rent.replace(',', '').replace('$', '')) if rent else None
+            elif rent:
+                rent = int(rent)
+
+            beds = data.get('beds')
+            if isinstance(beds, str):
+                beds = int(beds) if beds else None
+            elif beds:
+                beds = int(beds)
+
+            baths = data.get('baths')
+            if isinstance(baths, str):
+                baths = float(baths) if baths else None
+            elif baths:
+                baths = float(baths)
+
+            sqft = data.get('sqft')
+            if isinstance(sqft, str):
+                sqft = int(sqft.replace(',', '')) if sqft else None
+            elif sqft:
+                sqft = int(sqft)
+
+            prop_type = data.get('type', '')
+            description = data.get('description', '')
+            image_url = data.get('image', '')
+
+            # Parse city/state/zip from address
+            city, state, zip_code = None, None, None
+            if address:
+                zip_match = re.search(r'(\d{5})(?:-\d{4})?', address)
+                if zip_match:
+                    zip_code = zip_match.group(1)
+
+                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Shelton)', address, re.I)
+                if city_match:
+                    city = city_match.group(1).title()
+                    state = "WA"
+
+            # Generate source ID
+            source_id = f"simplyhome_{index}_{abs(hash(address or str(rent)))}"[:20]
+
+            if not address and not rent:
+                return None
+
+            features = []
+            if prop_type:
+                features.append(prop_type.lower())
+
+            return ScrapedListing(
+                source_name=self.source_name,
+                source_id=source_id,
+                url=self.base_url,
+                title=address or f"SimplyHome Property #{index}",
+                address=address,
+                city=city,
+                state=state or "WA",
+                zip_code=zip_code,
+                rent=rent,
+                bedrooms=beds,
+                bathrooms=baths,
+                sqft=sqft,
+                description=description,
+                features=features,
+                image_url=image_url,
+            )
+
+        except Exception as e:
+            print(f"[{self.source_name}] Error creating listing from data: {e}")
+            return None
 
     def _parse_list_item(self, item: Tag, index: int) -> Optional[ScrapedListing]:
         """Parse a listing from the list view item."""
