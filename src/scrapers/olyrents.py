@@ -350,12 +350,14 @@ class OlyrentsScraper(BrowserScraper):
             desc_el = card.select_one('.card-property-description')
             description = desc_el.get_text(strip=True) if desc_el else None
 
-            # Get image from .card-image background-image
+            # Get image from .slider_image background-image
             image_url = None
-            card_img = card.select_one('.card-image')
-            if card_img:
-                style = card_img.get('style', '')
-                img_match = re.search(r'url\(["\']?([^"\']+)["\']?\)', style)
+            slider_img = card.select_one('.slider_image')
+            if slider_img:
+                style = slider_img.get('style', '')
+                # Handle both regular quotes and HTML-encoded quotes (&quot;)
+                style = style.replace('&quot;', '"')
+                img_match = re.search(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
                 if img_match:
                     image_url = img_match.group(1)
 
