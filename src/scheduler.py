@@ -14,10 +14,12 @@ class RentalScheduler:
         self.config = get_config()
         self.scheduler = BackgroundScheduler()
         self.scraper_service = ScraperService()
+        self._current_interval_minutes = self.config.scheduler.interval_hours * 60
 
     def start(self):
         """Start the scheduler."""
         interval_hours = self.config.scheduler.interval_hours
+        self._current_interval_minutes = interval_hours * 60
 
         # Add the scraping job
         self.scheduler.add_job(
@@ -58,6 +60,30 @@ class RentalScheduler:
         """Stop the scheduler."""
         self.scheduler.shutdown()
         print("[scheduler] Stopped")
+
+    def update_interval(self, minutes: int):
+        """Update the scraping interval dynamically."""
+        self._current_interval_minutes = minutes
+
+        # Remove existing job and add with new interval
+        self.scheduler.remove_job("scrape_listings")
+        self.scheduler.add_job(
+            self._run_scrape_job,
+            trigger=IntervalTrigger(minutes=minutes),
+            id="scrape_listings",
+            name="Scrape rental listings",
+            replace_existing=True,
+        )
+
+        if minutes >= 60:
+            interval_str = f"{minutes // 60} hour(s)"
+        else:
+            interval_str = f"{minutes} minute(s)"
+        print(f"[scheduler] Updated interval to {interval_str}")
+
+    def get_interval_minutes(self) -> int:
+        """Get the current scraping interval in minutes."""
+        return self._current_interval_minutes
 
     def _run_scrape_job(self):
         """Run the scraping job."""

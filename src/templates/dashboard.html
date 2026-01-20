@@ -467,6 +467,16 @@
             <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
             <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
             <button type="button" class="secondary" onclick="testTelegram()">Test Telegram</button>
+
+            <span style="margin-left: 20px; color: #666;">Recheck:</span>
+            <select id="scrape-interval" onchange="updateInterval(this.value)" style="padding: 6px 10px;">
+                <option value="5">5 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 hour</option>
+                <option value="360">6 hours</option>
+                <option value="720">12 hours</option>
+                <option value="1440">1 day</option>
+            </select>
         </form>
 
         {% if grouped.favorites %}
@@ -968,6 +978,45 @@
                 alert('Failed to test Telegram: ' + e.message);
             }
         }
+
+        async function updateInterval(minutes) {
+            try {
+                const response = await fetch(`/scheduler/interval/${minutes}`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    console.log(data.message);
+                } else {
+                    alert('Failed to update interval: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to update interval: ' + e.message);
+            }
+        }
+
+        // Load current interval on page load
+        async function loadSchedulerStatus() {
+            try {
+                const response = await fetch('/scheduler/status');
+                const data = await response.json();
+                if (data.interval_minutes) {
+                    const select = document.getElementById('scrape-interval');
+                    if (select) {
+                        // Find exact match or closest lower option
+                        const options = Array.from(select.options).map(o => parseInt(o.value));
+                        let bestMatch = options[0];
+                        for (const opt of options) {
+                            if (opt <= data.interval_minutes) bestMatch = opt;
+                        }
+                        select.value = bestMatch;
+                    }
+                }
+            } catch (e) {
+                console.log('Could not load scheduler status:', e);
+            }
+        }
+
+        // Load status on page load
+        document.addEventListener('DOMContentLoaded', loadSchedulerStatus);
     </script>
 </body>
 </html>

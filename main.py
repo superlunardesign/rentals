@@ -68,7 +68,7 @@ def create_app() -> FastAPI:
         """Get scheduler status and next run times."""
         global _scheduler
         if not _scheduler:
-            return {"status": "not running", "jobs": []}
+            return {"status": "not running", "jobs": [], "interval_minutes": 60}
 
         jobs = []
         for job in _scheduler.scheduler.get_jobs():
@@ -82,6 +82,32 @@ def create_app() -> FastAPI:
         return {
             "status": "running",
             "jobs": jobs,
+            "interval_minutes": _scheduler.get_interval_minutes(),
+        }
+
+    @application.post("/scheduler/interval/{minutes}")
+    async def set_scheduler_interval(minutes: int):
+        """Update the scheduler interval (in minutes)."""
+        global _scheduler
+
+        # Validate minutes (5 min to 24 hours)
+        if minutes < 5 or minutes > 1440:
+            return {"success": False, "error": "Interval must be between 5 and 1440 minutes"}
+
+        if not _scheduler:
+            return {"success": False, "error": "Scheduler not running"}
+
+        _scheduler.update_interval(minutes)
+
+        if minutes >= 60:
+            interval_str = f"{minutes // 60} hour(s)"
+        else:
+            interval_str = f"{minutes} minute(s)"
+
+        return {
+            "success": True,
+            "interval_minutes": minutes,
+            "message": f"Scrape interval updated to {interval_str}",
         }
 
     return application
