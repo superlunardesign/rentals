@@ -291,7 +291,7 @@ class OlyrentsScraper(BrowserScraper):
                     state = "WA"
 
             # Generate source ID
-            source_id = f"olyrents_{index}_{abs(hash(address or str(rent)))}}"[:20]
+            source_id = f"olyrents_{index}_{abs(hash(address or str(rent)))}"[:20]
 
             if not address and not rent:
                 return None
