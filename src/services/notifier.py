@@ -81,6 +81,7 @@ class TelegramNotifier:
 
         try:
             print(f"[telegram] Sending notification for: {listing.title}")
+            print(f"[telegram] Image URL: {listing.image_url[:60] if listing.image_url else 'None'}...")
             message = self._format_listing_message(listing)
 
             # If listing has an image, send as photo with caption
