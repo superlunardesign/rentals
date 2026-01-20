@@ -1,11 +1,17 @@
 """Database setup and session management."""
 
+import os
 from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Database file location
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "rentals.db"
+# Use /data on Render (persistent disk), local data/ for development
+if os.path.exists("/data") and os.path.isdir("/data"):
+    DB_PATH = Path("/data/rentals.db")
+else:
+    DB_PATH = Path(__file__).parent.parent.parent / "data" / "rentals.db"
+
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 # Create engine with better concurrency settings
