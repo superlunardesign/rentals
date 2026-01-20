@@ -101,6 +101,26 @@ class OlyrentsScraper(BrowserScraper):
             """)
             await page.wait_for_timeout(1000)  # Wait for images to load
 
+            # Extract image URLs directly via JavaScript (avoids HTML parsing issues with quotes)
+            image_urls = await page.evaluate("""
+                () => {
+                    const cards = document.querySelectorAll('.list_item');
+                    const urls = [];
+                    cards.forEach(card => {
+                        const sliderImg = card.querySelector('.slider_image');
+                        if (sliderImg) {
+                            const style = sliderImg.style.backgroundImage;
+                            const match = style.match(/url\\(["']?([^"')]+)["']?\\)/);
+                            urls.push(match ? match[1] : null);
+                        } else {
+                            urls.push(null);
+                        }
+                    });
+                    return urls;
+                }
+            """)
+            print(f"[{self.source_name}] Extracted {len([u for u in image_urls if u])} image URLs via JS")
+
             # Get the page HTML
             html = await page.content()
             print(f"[{self.source_name}] Got HTML, closing browser to free memory...")
@@ -130,7 +150,9 @@ class OlyrentsScraper(BrowserScraper):
 
             for i, item in enumerate(list_items):
                 try:
-                    listing = self._parse_card(item, i)
+                    # Pass pre-extracted image URL from JavaScript
+                    img_url = image_urls[i] if i < len(image_urls) else None
+                    listing = self._parse_card(item, i, img_url)
                     if listing:
                         listings.append(listing)
                         if listing.image_url:
@@ -282,7 +304,7 @@ class OlyrentsScraper(BrowserScraper):
             print(f"[{self.source_name}] Error creating listing: {e}")
             return None
 
-    def _parse_card(self, card: Tag, index: int) -> Optional[ScrapedListing]:
+    def _parse_card(self, card: Tag, index: int, js_image_url: str = None) -> Optional[ScrapedListing]:
         """Parse a listing card from the main website."""
         try:
             # Get address - try specific class first, then general
@@ -343,24 +365,8 @@ class OlyrentsScraper(BrowserScraper):
                     if kw in desc_lower:
                         features.append(kw)
 
-            # Get image from .slider_image background-image
-            image_url = None
-            slider_img = card.select_one('.slider_image')
-            if slider_img:
-                style = slider_img.get('style', '')
-                if index == 0:
-                    print(f"[{self.source_name}] DEBUG: slider_image style = {style[:100]}...")
-                # Handle both regular quotes and HTML-encoded quotes (&quot;)
-                style = style.replace('&quot;', '"')
-                img_match = re.search(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
-                if img_match:
-                    image_url = img_match.group(1)
-                    if index == 0:
-                        print(f"[{self.source_name}] Image URL found: {image_url[:60]}...")
-                elif index == 0:
-                    print(f"[{self.source_name}] DEBUG: No image match in style")
-            elif index == 0:
-                print(f"[{self.source_name}] DEBUG: No .slider_image found in card")
+            # Use pre-extracted image URL from JavaScript (avoids HTML parsing issues)
+            image_url = js_image_url
 
             # Parse city/state/zip from address
             city, state, zip_code = None, None, None
