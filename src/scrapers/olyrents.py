@@ -69,40 +69,13 @@ class OlyrentsScraper(BrowserScraper):
                 print(f"[{self.source_name}] Detected PropertyWare - using PW selectors")
                 return await self._scrape_propertyware(page)
 
-            # Otherwise try main site selectors - expanded list
-            selectors_to_try = [
-                '.list_item', '.list-item', 'div.list_item', 'article.list_item',
-                '.card', '.property-card', '.listing', '.listing-card',
-                '.property', '.property-item', '[class*="property"]',
-                '[class*="listing"]', '[class*="card"]',
-                '.item', 'article', '.entry'
-            ]
+            # Use the known selector for olyrents.com
+            found_selector = '.list_item'
+            count = await page.locator(found_selector).count()
+            print(f"[{self.source_name}] Found {count} elements with '{found_selector}'")
 
-            found_selector = None
-            for selector in selectors_to_try:
-                try:
-                    count = await page.locator(selector).count()
-                    if count > 0:
-                        print(f"[{self.source_name}] Found {count} elements with '{selector}'")
-                        found_selector = selector
-                        break
-                except:
-                    continue
-
-            if not found_selector:
-                print(f"[{self.source_name}] No listing elements found with standard selectors")
-                # Dump part of the HTML for debugging
-                html = await page.content()
-                soup = BeautifulSoup(html, "lxml")
-                body = soup.body
-                if body:
-                    # Find all elements with class attributes
-                    elements_with_class = body.find_all(attrs={"class": True})[:30]
-                    classes_found = set()
-                    for el in elements_with_class:
-                        for cls in el.get("class", []):
-                            classes_found.add(cls)
-                    print(f"[{self.source_name}] Classes on page: {sorted(classes_found)[:50]}")
+            if count == 0:
+                print(f"[{self.source_name}] No listing elements found")
                 return listings
 
             # Get the page HTML and parse
@@ -269,16 +242,16 @@ class OlyrentsScraper(BrowserScraper):
     def _parse_card(self, card: Tag, index: int) -> Optional[ScrapedListing]:
         """Parse a listing card from the main website."""
         try:
-            # Get address
-            address_el = card.select_one('.card-property-address')
+            # Get address - try specific class first, then general
+            address_el = card.select_one('.card-property-address-top') or card.select_one('.card-property-address')
             address = address_el.get_text(strip=True) if address_el else None
 
-            # Get title
+            # Get title (may not exist, use address as fallback)
             title_el = card.select_one('.card-property-title')
             title = title_el.get_text(strip=True) if title_el else None
 
-            # Get price
-            price_el = card.select_one('.card-property-price span')
+            # Get price from .card-property-prices
+            price_el = card.select_one('.card-property-prices')
             rent = None
             if price_el:
                 price_text = price_el.get_text(strip=True)
@@ -286,26 +259,21 @@ class OlyrentsScraper(BrowserScraper):
                 if rent_match:
                     rent = int(rent_match.group(1).replace(',', ''))
 
-            # Get beds/baths from .card-property-detail spans
-            detail_spans = card.select('.card-property-detail span')
+            # Get beds/baths from .card-property-details
             bedrooms = None
             bathrooms = None
+            details_el = card.select_one('.card-property-details')
+            if details_el:
+                details_text = details_el.get_text(strip=True).lower()
+                # Look for patterns like "3 bd" or "2 ba"
+                bed_match = re.search(r'(\d+)\s*bd', details_text)
+                if bed_match:
+                    bedrooms = int(bed_match.group(1))
+                bath_match = re.search(r'(\d+\.?\d*)\s*ba', details_text)
+                if bath_match:
+                    bathrooms = float(bath_match.group(1))
 
-            details = card.select('.card-property-detail')
-            for detail in details:
-                text = detail.get_text(strip=True).lower()
-                num_el = detail.select_one('span')
-                if num_el:
-                    num_text = num_el.get_text(strip=True)
-                    try:
-                        if 'bd' in text:
-                            bedrooms = int(num_text)
-                        elif 'ba' in text:
-                            bathrooms = float(num_text)
-                    except ValueError:
-                        pass
-
-            # Get square footage
+            # Get square footage from .card-property-area
             area_el = card.select_one('.card-property-area')
             sqft = None
             if area_el:
@@ -318,11 +286,11 @@ class OlyrentsScraper(BrowserScraper):
             desc_el = card.select_one('.card-property-description')
             description = desc_el.get_text(strip=True) if desc_el else None
 
-            # Get image from slider background-image
+            # Get image from .card-image background-image
             image_url = None
-            slider_img = card.select_one('.slider_image')
-            if slider_img:
-                style = slider_img.get('style', '')
+            card_img = card.select_one('.card-image')
+            if card_img:
+                style = card_img.get('style', '')
                 img_match = re.search(r'url\(["\']?([^"\']+)["\']?\)', style)
                 if img_match:
                     image_url = img_match.group(1)
