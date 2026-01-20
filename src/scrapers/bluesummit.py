@@ -51,9 +51,31 @@ class BlueSummitScraper(BrowserScraper):
             html = await page.content()
             soup = BeautifulSoup(html, "lxml")
 
-            # Find all listing cards
+            # Find all listing cards - try multiple selectors
             cards = soup.select("a.teaser__card")
-            print(f"[{self.source_name}] Found {len(cards)} listing cards")
+            print(f"[{self.source_name}] Found {len(cards)} cards with 'a.teaser__card'")
+
+            # If none found, try alternative selectors and debug
+            if not cards:
+                # Try other common patterns
+                alt_selectors = [
+                    ".property-card", ".listing-card", ".rental-card",
+                    "[class*='teaser']", "[class*='property']", "[class*='listing']",
+                    ".card", "article", ".property"
+                ]
+                for sel in alt_selectors:
+                    found = soup.select(sel)
+                    if found:
+                        print(f"[{self.source_name}] Found {len(found)} with '{sel}'")
+                        if not cards:
+                            cards = found  # Use first match
+
+                # Debug: show what classes exist on the page
+                all_classes = set()
+                for el in soup.find_all(class_=True):
+                    for cls in el.get('class', []):
+                        all_classes.add(cls)
+                print(f"[{self.source_name}] Page classes (sample): {list(all_classes)[:20]}")
 
             for card in cards:
                 listing = self._parse_card(card)
@@ -68,6 +90,12 @@ class BlueSummitScraper(BrowserScraper):
 
         finally:
             await page.close()
+            if self._browser:
+                await self._browser.close()
+                self._browser = None
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
 
         return listings
 
