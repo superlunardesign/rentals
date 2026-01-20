@@ -18,7 +18,7 @@ class OlyrentsScraper(BrowserScraper):
     in a clean card-based layout.
     """
 
-    def __init__(self, url: str = "https://olyrents.com/properties/"):
+    def __init__(self, url: str = "https://olyrents.com/properties/olympia/"):
         super().__init__(source_name="olyrents", base_url=url)
         self._on_listing_callback = None
 
@@ -52,55 +52,45 @@ class OlyrentsScraper(BrowserScraper):
         try:
             await page.set_viewport_size({"width": 1920, "height": 1080})
 
-            print(f"[{self.source_name}] Loading page...")
+            print(f"[{self.source_name}] Loading page: {self.base_url}")
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
 
-            # Wait longer for JavaScript content to load
-            await page.wait_for_timeout(5000)
+            # Wait for JavaScript content to load
+            await page.wait_for_timeout(3000)
 
-            # Debug: print page title and URL to verify we're on the right page
+            # Check where we actually ended up
+            final_url = page.url
             title = await page.title()
-            url = page.url
-            print(f"[{self.source_name}] Page loaded: {title} ({url})")
+            print(f"[{self.source_name}] Page loaded: {title}")
+            print(f"[{self.source_name}] Final URL: {final_url}")
 
-            # Try multiple selectors
-            selectors_to_try = ['.list_item', '.card', '.property-card', '.listing', '[class*="list"]']
+            # If we got redirected to PropertyWare, use PropertyWare selectors
+            if 'propertyware' in final_url.lower():
+                print(f"[{self.source_name}] Detected PropertyWare - using PW selectors")
+                return await self._scrape_propertyware(page)
+
+            # Otherwise try main site selectors
+            selectors_to_try = ['.list_item', '.card', '.property-card', '.listing']
 
             found_selector = None
             for selector in selectors_to_try:
                 try:
-                    await page.wait_for_selector(selector, timeout=3000)
                     count = await page.locator(selector).count()
                     if count > 0:
-                        print(f"[{self.source_name}] Found {count} elements with selector '{selector}'")
+                        print(f"[{self.source_name}] Found {count} elements with '{selector}'")
                         found_selector = selector
                         break
                 except:
                     continue
 
             if not found_selector:
-                # Debug: dump some page info
-                html = await page.content()
-                print(f"[{self.source_name}] Page length: {len(html)} chars")
-                # Print first 500 chars of body
-                soup = BeautifulSoup(html, "lxml")
-                body = soup.find('body')
-                if body:
-                    body_text = body.get_text()[:500]
-                    print(f"[{self.source_name}] Body preview: {body_text[:200]}...")
-                    # Find all divs with class attributes
-                    divs_with_class = soup.find_all('div', class_=True)[:10]
-                    classes = [' '.join(d.get('class', [])) for d in divs_with_class]
-                    print(f"[{self.source_name}] Sample div classes: {classes}")
+                print(f"[{self.source_name}] No listing elements found")
                 return listings
 
-            # Get the page HTML
+            # Get the page HTML and parse
             html = await page.content()
             soup = BeautifulSoup(html, "lxml")
-
-            # Find all listing cards using the selector that worked
             list_items = soup.select(found_selector)
-            print(f"[{self.source_name}] Found {len(list_items)} listing cards")
 
             for i, item in enumerate(list_items):
                 try:
@@ -112,17 +102,151 @@ class OlyrentsScraper(BrowserScraper):
                             self._on_listing_callback(listing)
                 except Exception as e:
                     print(f"[{self.source_name}] Error parsing card {i+1}: {e}")
-                    continue
 
         except Exception as e:
-            print(f"[{self.source_name}] Error scraping main site: {e}")
+            print(f"[{self.source_name}] Error scraping: {e}")
             import traceback
             traceback.print_exc()
-
         finally:
             await page.close()
 
         return listings
+
+    async def _scrape_propertyware(self, page) -> list[ScrapedListing]:
+        """Scrape from PropertyWare widget when redirected there."""
+        listings = []
+
+        try:
+            # Click Detail tab to activate it
+            print(f"[{self.source_name}] Activating Detail tab...")
+            try:
+                await page.click('#pw_listing_widget_tabs_detail_link')
+                await page.wait_for_timeout(1500)
+            except:
+                print(f"[{self.source_name}] Could not click Detail tab")
+                return listings
+
+            # Count listings by checking how many times we can click next
+            # First get initial count from list view
+            list_count = await page.locator('li.pw_listing_widget_tabs_list_item').count()
+            print(f"[{self.source_name}] Found {list_count} listings in PropertyWare")
+
+            seen_addresses = set()
+            max_iterations = list_count + 5  # Safety limit
+
+            for i in range(max_iterations):
+                try:
+                    # Get current detail view data
+                    detail_data = await page.evaluate("""
+                        () => {
+                            let address = document.querySelector('#pw_listing_widget_tabs_detail_address');
+                            let price = document.querySelector('#pw_listing_widget_tabs_detail_price');
+                            let bed = document.querySelector('#pw_listing_widget_tabs_detail_bed');
+                            let bath = document.querySelector('#pw_listing_widget_tabs_detail_bath');
+                            let area = document.querySelector('#pw_listing_widget_tabs_detail_area');
+                            let type = document.querySelector('#pw_listing_widget_tabs_detail_type');
+                            let desc = document.querySelector('#pw_listing_widget_tabs_detail_description_p');
+                            let img = document.querySelector('#pw_listing_widget_tabs_detail_image');
+
+                            return {
+                                address: address ? address.innerText.trim() : '',
+                                rent: price ? price.innerText.trim() : '',
+                                beds: bed ? bed.innerText.trim() : '',
+                                baths: bath ? bath.innerText.trim() : '',
+                                sqft: area ? area.innerText.trim() : '',
+                                type: type ? type.innerText.trim() : '',
+                                description: desc ? desc.innerText.trim() : '',
+                                image: img ? img.src : ''
+                            };
+                        }
+                    """)
+
+                    address = detail_data.get('address', '')
+
+                    # Stop if we've seen this address (looped back to start)
+                    if address in seen_addresses:
+                        print(f"[{self.source_name}] Reached end (saw {address} again)")
+                        break
+
+                    if address:
+                        seen_addresses.add(address)
+                        listing = self._create_listing_from_pw_data(detail_data, address, i)
+                        if listing:
+                            listings.append(listing)
+                            print(f"[{self.source_name}] Parsed {len(listings)}: {address[:40]}... - ${listing.rent or 'N/A'}")
+                            if self._on_listing_callback:
+                                self._on_listing_callback(listing)
+
+                    # Navigate to next listing
+                    await page.evaluate("gotoNextBuilding()")
+                    await page.wait_for_timeout(800)
+
+                except Exception as e:
+                    print(f"[{self.source_name}] Error on listing {i+1}: {e}")
+                    break
+
+        except Exception as e:
+            print(f"[{self.source_name}] PropertyWare scrape error: {e}")
+
+        return listings
+
+    def _create_listing_from_pw_data(self, data: dict, address: str, index: int) -> Optional[ScrapedListing]:
+        """Create listing from PropertyWare detail view data."""
+        import re
+        try:
+            rent = data.get('rent', '')
+            if rent:
+                rent_match = re.search(r'\$?([\d,]+)', rent)
+                rent = int(rent_match.group(1).replace(',', '')) if rent_match else None
+            else:
+                rent = None
+
+            beds = data.get('beds', '')
+            beds = int(beds) if beds and beds.isdigit() else None
+
+            baths = data.get('baths', '')
+            try:
+                baths = float(baths) if baths else None
+            except:
+                baths = None
+
+            sqft = data.get('sqft', '').replace(',', '')
+            sqft_match = re.search(r'(\d+)', sqft) if sqft else None
+            sqft = int(sqft_match.group(1)) if sqft_match else None
+
+            # Parse city from address
+            city, state, zip_code = None, None, None
+            if address:
+                zip_match = re.search(r'(\d{5})(?:-\d{4})?', address)
+                if zip_match:
+                    zip_code = zip_match.group(1)
+                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Shelton)', address, re.I)
+                if city_match:
+                    city = city_match.group(1).title()
+                    state = "WA"
+
+            source_id = f"olyrents_{index}_{abs(hash(address))}"[:20]
+
+            return ScrapedListing(
+                source_name=self.source_name,
+                source_id=source_id,
+                url=self.base_url,
+                title=address,
+                address=address,
+                city=city,
+                state=state or "WA",
+                zip_code=zip_code,
+                rent=rent,
+                bedrooms=beds,
+                bathrooms=baths,
+                sqft=sqft,
+                description=data.get('description', ''),
+                features=[data.get('type', '')] if data.get('type') else [],
+                image_url=data.get('image', ''),
+            )
+        except Exception as e:
+            print(f"[{self.source_name}] Error creating listing: {e}")
+            return None
 
     def _parse_card(self, card: Tag, index: int) -> Optional[ScrapedListing]:
         """Parse a listing card from the main website."""
