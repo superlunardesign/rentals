@@ -124,6 +124,11 @@ sources:
     url: "https://www.bluesummitrealty.com/property-management/#listings"
     enabled: true
 
+  - name: "Invitation Homes"
+    scraper: "invitationhomes"
+    url: "https://www.invitationhomes.com/search/houses-for-rent?sort-by=distance_asc&lat=47.02225242110012&lng=-122.90050484130857&zoom=12"
+    enabled: true
+
 # Scheduler settings
 scheduler:
   interval_hours: 1
