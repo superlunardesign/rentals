@@ -48,14 +48,12 @@ class BlueSummitScraper(BrowserScraper):
         listings = []
 
         browser = await self._get_browser_async()
-        page = await browser.new_page()
+        page, context = await self._create_stealth_page(browser)
 
         try:
-            await page.set_viewport_size({"width": 1920, "height": 1080})
-
             print(f"[{self.source_name}] Loading page: {self.base_url}")
             await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
 
             # Wait for listings to load
             print(f"[{self.source_name}] Waiting for listings to load...")
@@ -100,8 +98,9 @@ class BlueSummitScraper(BrowserScraper):
             traceback.print_exc()
 
         finally:
-            # Close page AND browser to free memory
+            # Close page, context AND browser to free memory
             await page.close()
+            await context.close()
             if self._browser:
                 await self._browser.close()
                 self._browser = None

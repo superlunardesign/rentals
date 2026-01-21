@@ -72,6 +72,42 @@ class BrowserScraper(BaseScraper):
                 raise
         return self._browser
 
+    async def _create_stealth_page(self, browser):
+        """Create a new page with stealth settings to avoid bot detection."""
+        # Realistic user agent
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+
+        context = await browser.new_context(
+            user_agent=user_agent,
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/Los_Angeles",
+        )
+
+        page = await context.new_page()
+
+        # Add stealth scripts to mask automation
+        await page.add_init_script("""
+            // Mask webdriver
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+
+            // Mask plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+
+            // Mask languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+        """)
+
+        return page, context
+
     async def _ensure_browsers_installed(self):
         """Install Playwright browsers if not present (needed for Render free tier)."""
         import subprocess
