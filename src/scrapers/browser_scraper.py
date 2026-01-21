@@ -74,11 +74,11 @@ class BrowserScraper(BaseScraper):
 
     async def _create_stealth_page(self, browser):
         """Create a new page with stealth settings to avoid bot detection."""
-        # Realistic user agent
+        # Realistic user agent (updated to more recent Chrome)
         user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
+            "Chrome/122.0.0.0 Safari/537.36"
         )
 
         context = await browser.new_context(
@@ -86,24 +86,96 @@ class BrowserScraper(BaseScraper):
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
             timezone_id="America/Los_Angeles",
+            # Add extra headers to look more like a real browser
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Cache-Control": "max-age=0",
+                "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Upgrade-Insecure-Requests": "1",
+            },
         )
 
         page = await context.new_page()
 
-        # Add stealth scripts to mask automation
+        # Add comprehensive stealth scripts to mask automation
         await page.add_init_script("""
-            // Mask webdriver
+            // Mask webdriver property
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            delete navigator.__proto__.webdriver;
 
-            // Mask plugins
+            // Mask plugins with realistic Chrome plugins
             Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
+                get: () => {
+                    const plugins = [
+                        {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+                        {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+                        {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''},
+                    ];
+                    plugins.item = (i) => plugins[i];
+                    plugins.namedItem = (name) => plugins.find(p => p.name === name);
+                    plugins.refresh = () => {};
+                    return plugins;
+                }
             });
 
             // Mask languages
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en']
             });
+
+            // Mask permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+
+            // Mask chrome runtime
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {},
+            };
+
+            // Mask connection info
+            Object.defineProperty(navigator, 'connection', {
+                get: () => ({
+                    effectiveType: '4g',
+                    rtt: 50,
+                    downlink: 10,
+                    saveData: false,
+                })
+            });
+
+            // Mask hardware concurrency
+            Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+
+            // Mask device memory
+            Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+
+            // Mask platform
+            Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+
+            // Fix toString methods
+            const oldCall = Function.prototype.call;
+            function hook(target, fakeValue) {
+                const handler = {
+                    apply: function(target, thisArg, argumentsList) {
+                        return fakeValue;
+                    }
+                };
+                return new Proxy(target, handler);
+            }
         """)
 
         return page, context

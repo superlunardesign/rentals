@@ -52,16 +52,36 @@ class BlueSummitScraper(BrowserScraper):
 
         try:
             print(f"[{self.source_name}] Loading page: {self.base_url}")
-            await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)
+            await page.goto(self.base_url, wait_until="domcontentloaded", timeout=60000)
+
+            # Wait for potential Cloudflare challenge to resolve
+            print(f"[{self.source_name}] Waiting for page to fully load...")
+            await page.wait_for_timeout(5000)
+
+            # Check for Cloudflare challenge page and wait it out
+            page_title = await page.title()
+            if "Just a moment" in page_title or "Checking" in page_title:
+                print(f"[{self.source_name}] Cloudflare challenge detected, waiting...")
+                await page.wait_for_timeout(10000)
+
+            # Scroll down to trigger lazy loading and reach #listings anchor
+            print(f"[{self.source_name}] Scrolling to listings section...")
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            await page.wait_for_timeout(2000)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(2000)
 
             # Wait for listings to load
             print(f"[{self.source_name}] Waiting for listings to load...")
             try:
-                await page.wait_for_selector('a.teaser__card', timeout=10000)
+                await page.wait_for_selector('a.teaser__card', timeout=15000)
                 print(f"[{self.source_name}] Listings found")
             except Exception:
                 print(f"[{self.source_name}] Primary selector not found, checking page...")
+                # Debug: show page title and URL
+                current_url = page.url
+                print(f"[{self.source_name}] Current URL: {current_url}")
+                print(f"[{self.source_name}] Page title: {page_title}")
                 # Debug: show what's on the page
                 html = await page.content()
                 soup = BeautifulSoup(html, "lxml")
@@ -70,6 +90,10 @@ class BlueSummitScraper(BrowserScraper):
                     for cls in el.get('class', []):
                         all_classes.add(cls)
                 print(f"[{self.source_name}] Page classes: {list(all_classes)[:30]}")
+                # Check for any links that might be listings
+                links = soup.find_all('a', href=True)
+                listing_links = [a['href'] for a in links if '/listing/' in a.get('href', '')]
+                print(f"[{self.source_name}] Found {len(listing_links)} listing links on page")
                 return listings
 
             # Get page HTML
