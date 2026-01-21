@@ -121,7 +121,7 @@ sources:
 
   - name: "Blue Summit Realty"
     scraper: "bluesummit"
-    url: "https://www.bluesummitrealty.com/property-management/"
+    url: "https://www.bluesummitrealty.com/property-management/#listings"
     enabled: true
 
 # Scheduler settings
