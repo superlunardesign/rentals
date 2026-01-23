@@ -108,6 +108,11 @@ sources:
     url: "https://windermereolympiapm.appfolio.com/listings"
     enabled: true
 
+  - name: "Rants Group Property Management"
+    scraper: "rantsgroup"
+    url: "https://rantsgroup.appfolio.com/listings"
+    enabled: true
+
   - name: "Capitol Property Management"
     scraper: "capitol_pm"
     url: "https://capitol-pm.managebuilding.com/Resident/Public/Rentals"
