@@ -198,8 +198,11 @@ class SimplyHomeScraper(BrowserScraper):
                     city = city_match.group(1).title()
                     state = "WA"
 
-            # Generate source ID
-            source_id = f"simplyhome_{index}_{abs(hash(address or str(rent)))}"[:20]
+            # Generate stable source ID based on address (don't include index which changes with order)
+            source_id = f"simplyhome_{abs(hash(address or ''))}"
+            # If no address, fall back to rent-based ID
+            if not address and rent:
+                source_id = f"simplyhome_rent_{rent}"
 
             if not address and not rent:
                 return None
