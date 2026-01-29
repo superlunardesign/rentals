@@ -1,52 +1,109 @@
 """Scraper for Rants Group Property Management.
 
 Uses AppFolio listings at rantsgroup.appfolio.com.
+Requires browser-based scraping due to bot protection.
 """
 
 import re
 from typing import Optional
 from urllib.parse import urljoin
-from bs4 import Tag
+from bs4 import BeautifulSoup, Tag
 
-from .base import BaseScraper, ScrapedListing
+from .base import ScrapedListing
+from .browser_scraper import BrowserScraper
 
 
-class RantsGroupScraper(BaseScraper):
-    """Scraper for Rants Group Property Management via AppFolio."""
+class RantsGroupScraper(BrowserScraper):
+    """Scraper for Rants Group Property Management via AppFolio.
+
+    Uses browser-based scraping to bypass bot protection.
+    """
 
     def __init__(self, url: str = "https://rantsgroup.appfolio.com/listings"):
         super().__init__(source_name="rantsgroup", base_url=url)
-        self.client.headers["Referer"] = "https://rantsgroup.appfolio.com/"
+        self._on_listing_callback = None
+
+    def set_on_listing_callback(self, callback):
+        """Set a callback to be called for each listing as it's parsed."""
+        self._on_listing_callback = callback
 
     def scrape(self) -> list[ScrapedListing]:
         """Scrape all listings from rantsgroup.appfolio.com."""
         listings = []
 
         try:
-            print(f"[rantsgroup] Fetching page...")
-            soup = self.fetch_page(self.base_url)
+            print(f"[{self.source_name}] Fetching page with browser...")
+            listings = self._run_async(self._scrape_with_browser())
+            print(f"[{self.source_name}] Total: {len(listings)} listings")
 
-            print(f"[rantsgroup] Page title: {soup.title.string if soup.title else 'No title'}")
+        except Exception as e:
+            print(f"[{self.source_name}] Error scraping: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return listings
+
+    async def _scrape_with_browser(self) -> list[ScrapedListing]:
+        """Scrape listings using Playwright browser."""
+        listings = []
+
+        browser = await self._get_browser_async()
+        page, context = await self._create_stealth_page(browser)
+
+        try:
+            print(f"[{self.source_name}] Loading page: {self.base_url}")
+            await page.goto(self.base_url, wait_until="networkidle", timeout=60000)
+            await page.wait_for_timeout(2000)
+
+            page_title = await page.title()
+            print(f"[{self.source_name}] Page title: {page_title}")
+
+            # Wait for listings to load
+            try:
+                await page.wait_for_selector("[id^='listing_']", timeout=15000)
+                print(f"[{self.source_name}] Listings found")
+            except Exception:
+                print(f"[{self.source_name}] No listings found with primary selector")
+                # Check for alternative selectors
+                try:
+                    await page.wait_for_selector(".listing-item", timeout=5000)
+                except Exception:
+                    print(f"[{self.source_name}] No listings found")
+                    return listings
+
+            # Get page HTML
+            html = await page.content()
+            soup = BeautifulSoup(html, "lxml")
 
             # AppFolio listings have IDs like "listing_521"
             listing_elements = soup.select("[id^='listing_']")
             if not listing_elements:
                 listing_elements = soup.select(".listing-item")
 
-            print(f"[rantsgroup] Found {len(listing_elements)} listing elements")
+            print(f"[{self.source_name}] Found {len(listing_elements)} listing elements")
 
             for element in listing_elements:
                 listing = self._parse_listing(element)
                 if listing:
                     listings.append(listing)
-                    print(f"[rantsgroup] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
-
-            print(f"[rantsgroup] Successfully parsed {len(listings)} listings")
+                    print(f"[{self.source_name}] Parsed: {listing.title[:40]}... - ${listing.rent or 'N/A'}")
+                    if self._on_listing_callback:
+                        self._on_listing_callback(listing)
 
         except Exception as e:
-            print(f"[rantsgroup] Error scraping: {e}")
+            print(f"[{self.source_name}] Error during scrape: {e}")
             import traceback
             traceback.print_exc()
+
+        finally:
+            await page.close()
+            await context.close()
+            if self._browser:
+                await self._browser.close()
+                self._browser = None
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
 
         return listings
 
