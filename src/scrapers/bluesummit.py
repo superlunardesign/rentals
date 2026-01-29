@@ -140,8 +140,24 @@ class BlueSummitScraper(BrowserScraper):
                 print(f"[{self.source_name}] Current URL: {current_url}")
                 print(f"[{self.source_name}] Page title: {page_title}")
 
+                # Save screenshot and HTML for debugging
+                try:
+                    await page.screenshot(path="/tmp/bluesummit_debug.png", full_page=True)
+                    print(f"[{self.source_name}] Screenshot saved to /tmp/bluesummit_debug.png")
+                except Exception as e:
+                    print(f"[{self.source_name}] Could not save screenshot: {e}")
+
                 # Get HTML and analyze structure
                 html = await page.content()
+
+                # Save HTML for debugging
+                try:
+                    with open("/tmp/bluesummit_debug.html", "w") as f:
+                        f.write(html)
+                    print(f"[{self.source_name}] HTML saved to /tmp/bluesummit_debug.html")
+                except Exception as e:
+                    print(f"[{self.source_name}] Could not save HTML: {e}")
+
                 soup = BeautifulSoup(html, "lxml")
 
                 # Look for listing-related classes
