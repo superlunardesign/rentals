@@ -52,57 +52,107 @@ class BlueSummitScraper(BrowserScraper):
 
         try:
             print(f"[{self.source_name}] Loading page: {self.base_url}")
-            await page.goto(self.base_url, wait_until="domcontentloaded", timeout=60000)
+            # Use networkidle to ensure all JS resources are fully loaded
+            await page.goto(self.base_url, wait_until="networkidle", timeout=60000)
 
             # Wait for potential Cloudflare challenge to resolve
             print(f"[{self.source_name}] Waiting for page to fully load...")
-            await page.wait_for_timeout(5000)
+            await page.wait_for_timeout(3000)
 
             # Check for Cloudflare challenge page and wait it out
             page_title = await page.title()
             if "Just a moment" in page_title or "Checking" in page_title:
                 print(f"[{self.source_name}] Cloudflare challenge detected, waiting...")
                 await page.wait_for_timeout(10000)
+                page_title = await page.title()
 
-            # Scroll down to trigger lazy loading and reach #listings anchor
+            # Navigate directly to the #listings anchor if present
             print(f"[{self.source_name}] Scrolling to listings section...")
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await page.wait_for_timeout(2000)
+            try:
+                # Try to scroll to the listings section specifically
+                await page.evaluate("""
+                    const listingsSection = document.querySelector('#listings') ||
+                                           document.querySelector('[id*="listing"]') ||
+                                           document.querySelector('.listings');
+                    if (listingsSection) {
+                        listingsSection.scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                        window.scrollTo(0, document.body.scrollHeight / 2);
+                    }
+                """)
+                await page.wait_for_timeout(2000)
+            except Exception as e:
+                print(f"[{self.source_name}] Scroll to section failed: {e}")
+
+            # Scroll down further to trigger lazy loading
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(2000)
 
+            # Try multiple potential selectors for listings
+            selectors_to_try = [
+                'a.teaser__card',
+                '.teaser__card',
+                '[class*="teaser"][class*="card"]',
+                '.listing-card',
+                '.property-card',
+                'a[href*="/listing/"]',
+                '#listings a[href*="/listing/"]',
+                '.listings a',
+            ]
+
             # Wait for listings to load
             print(f"[{self.source_name}] Waiting for listings to load...")
-            try:
-                await page.wait_for_selector('a.teaser__card', timeout=15000)
-                print(f"[{self.source_name}] Listings found")
-            except Exception:
-                print(f"[{self.source_name}] Primary selector not found, checking page...")
-                # Debug: show page title and URL
+            found_selector = None
+            for selector in selectors_to_try:
+                try:
+                    await page.wait_for_selector(selector, timeout=5000)
+                    found_selector = selector
+                    print(f"[{self.source_name}] Listings found with selector: {selector}")
+                    break
+                except Exception:
+                    continue
+
+            if not found_selector:
+                print(f"[{self.source_name}] No listings found with standard selectors, analyzing page...")
                 current_url = page.url
                 print(f"[{self.source_name}] Current URL: {current_url}")
                 print(f"[{self.source_name}] Page title: {page_title}")
-                # Debug: show what's on the page
+
+                # Get HTML and analyze structure
                 html = await page.content()
                 soup = BeautifulSoup(html, "lxml")
+
+                # Look for listing-related classes
                 all_classes = set()
-                for el in soup.find_all(class_=True)[:50]:
+                for el in soup.find_all(class_=True):
                     for cls in el.get('class', []):
-                        all_classes.add(cls)
-                print(f"[{self.source_name}] Page classes: {list(all_classes)[:30]}")
-                # Check for any links that might be listings
+                        if any(kw in cls.lower() for kw in ['teaser', 'listing', 'property', 'card', 'rental']):
+                            all_classes.add(cls)
+                print(f"[{self.source_name}] Listing-related classes: {sorted(all_classes)}")
+
+                # Check for listing links
                 links = soup.find_all('a', href=True)
                 listing_links = [a['href'] for a in links if '/listing/' in a.get('href', '')]
                 print(f"[{self.source_name}] Found {len(listing_links)} listing links on page")
+                if listing_links:
+                    print(f"[{self.source_name}] Sample links: {listing_links[:3]}")
+
+                # Check for iframes that might contain listings
+                iframes = soup.find_all('iframe')
+                if iframes:
+                    print(f"[{self.source_name}] Found {len(iframes)} iframes")
+                    for iframe in iframes:
+                        print(f"[{self.source_name}]   iframe src: {iframe.get('src', 'no src')}")
+
                 return listings
 
             # Get page HTML
             html = await page.content()
             soup = BeautifulSoup(html, "lxml")
 
-            # Find all listing cards
-            cards = soup.select("a.teaser__card")
-            print(f"[{self.source_name}] Found {len(cards)} listing cards")
+            # Find all listing cards using the working selector
+            cards = soup.select(found_selector)
+            print(f"[{self.source_name}] Found {len(cards)} listing cards with '{found_selector}'")
 
             for i, card in enumerate(cards):
                 try:
@@ -137,69 +187,157 @@ class BlueSummitScraper(BrowserScraper):
     def _parse_card(self, card: Tag) -> Optional[ScrapedListing]:
         """Parse a single listing card."""
         try:
-            # URL
+            # URL - try href attribute or find first link
             url = card.get("href", "")
+            if not url:
+                link_el = card.select_one("a[href]")
+                if link_el:
+                    url = link_el.get("href", "")
             if url and not url.startswith("http"):
                 url = urljoin(self.base_url, url)
 
-            # Price
-            price_el = card.select_one(".teaser__price__title")
+            # Get all text from card for fallback parsing
+            all_text = card.get_text(" ", strip=True)
+
+            # Price - try multiple selectors
+            price_selectors = [
+                ".teaser__price__title",
+                ".teaser__price",
+                "[class*='price']",
+                ".rent",
+                "[class*='rent']",
+            ]
             rent = None
-            if price_el:
-                price_text = price_el.get_text(strip=True)
-                rent_match = re.search(r'\$?([\d,]+)', price_text)
+            for selector in price_selectors:
+                price_el = card.select_one(selector)
+                if price_el:
+                    price_text = price_el.get_text(strip=True)
+                    rent_match = re.search(r'\$?([\d,]+)', price_text)
+                    if rent_match:
+                        rent = int(rent_match.group(1).replace(',', ''))
+                        if 100 < rent < 50000:  # Sanity check
+                            break
+                        rent = None
+
+            # Fallback: find price in all text
+            if not rent:
+                rent_match = re.search(r'\$\s*([\d,]+)(?:\s*/\s*mo)?', all_text)
                 if rent_match:
                     rent = int(rent_match.group(1).replace(',', ''))
+                    if not (100 < rent < 50000):
+                        rent = None
 
-            # Address
-            address_el = card.select_one(".teaser__address")
-            address = address_el.get_text(strip=True) if address_el else None
+            # Address - try multiple selectors
+            address_selectors = [
+                ".teaser__address",
+                "[class*='address']",
+                ".property-address",
+                ".listing-address",
+            ]
+            address = None
+            for selector in address_selectors:
+                address_el = card.select_one(selector)
+                if address_el:
+                    address = address_el.get_text(strip=True)
+                    if address and len(address) > 5:
+                        break
+                    address = None
+
+            # Fallback: find address pattern in text
+            if not address:
+                addr_match = re.search(
+                    r'(\d+\s+[\w\s]+(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd|Circle|Cir|Place|Pl)[^,\n]*)',
+                    all_text, re.I
+                )
+                if addr_match:
+                    address = addr_match.group(1).strip()
 
             # Parse city from address
             city, state, zip_code = None, "WA", None
             if address:
-                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis)', address, re.I)
+                city_match = re.search(
+                    r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Bucoda|DuPont|Steilacoom)',
+                    address, re.I
+                )
                 if city_match:
                     city = city_match.group(1).title()
+                # Extract zip code
+                zip_match = re.search(r'\b(\d{5})\b', address)
+                if zip_match:
+                    zip_code = zip_match.group(1)
 
-            # Beds, Baths, SqFt from additional info spans
-            info_spans = card.select(".teaser__additional-info span")
+            # Beds, Baths, SqFt - try multiple approaches
+            info_selectors = [
+                ".teaser__additional-info span",
+                "[class*='info'] span",
+                "[class*='specs'] span",
+                "[class*='detail'] span",
+            ]
             bedrooms, bathrooms, sqft = None, None, None
 
-            for span in info_spans:
-                text = span.get_text(strip=True)
+            for selector in info_selectors:
+                info_spans = card.select(selector)
+                if info_spans:
+                    for span in info_spans:
+                        text = span.get_text(strip=True)
 
-                if "Bed" in text:
-                    bed_match = re.search(r'([\d.]+)', text)
-                    if bed_match:
-                        bedrooms = int(float(bed_match.group(1)))
+                        if "Bed" in text and not bedrooms:
+                            bed_match = re.search(r'([\d.]+)', text)
+                            if bed_match:
+                                bedrooms = int(float(bed_match.group(1)))
 
-                elif "Bath" in text:
-                    bath_match = re.search(r'([\d.]+)', text)
-                    if bath_match:
-                        bathrooms = float(bath_match.group(1))
+                        elif "Bath" in text and not bathrooms:
+                            bath_match = re.search(r'([\d.]+)', text)
+                            if bath_match:
+                                bathrooms = float(bath_match.group(1))
 
-                elif "SqFt" in text:
-                    sqft_match = re.search(r'([\d,]+)', text)
-                    if sqft_match:
-                        sqft = int(sqft_match.group(1).replace(',', ''))
+                        elif "SqFt" in text or "sq" in text.lower() and not sqft:
+                            sqft_match = re.search(r'([\d,]+)', text)
+                            if sqft_match:
+                                sqft = int(sqft_match.group(1).replace(',', ''))
+                    if bedrooms or bathrooms or sqft:
+                        break
 
-            # Image - check both src and data-src for lazy loading
-            img_el = card.select_one(".teaser__img img")
+            # Fallback: parse from all text
+            if not bedrooms:
+                bed_match = re.search(r'(\d+)\s*(?:bed|br|bd)', all_text, re.I)
+                if bed_match:
+                    bedrooms = int(bed_match.group(1))
+            if not bathrooms:
+                bath_match = re.search(r'(\d+\.?\d*)\s*(?:bath|ba)', all_text, re.I)
+                if bath_match:
+                    bathrooms = float(bath_match.group(1))
+            if not sqft:
+                sqft_match = re.search(r'([\d,]+)\s*(?:sq\.?\s*ft|sqft|sf)', all_text, re.I)
+                if sqft_match:
+                    sqft = int(sqft_match.group(1).replace(',', ''))
+
+            # Image - try multiple selectors
+            img_selectors = [
+                ".teaser__img img",
+                "[class*='image'] img",
+                "[class*='photo'] img",
+                "img",
+            ]
             image_url = None
-            if img_el:
-                # Prefer data-src (full image) over src (placeholder)
-                image_url = img_el.get("data-src") or img_el.get("src")
-                # Skip placeholder images
-                if image_url and ("/util/" in image_url or "no-image" in image_url):
-                    image_url = img_el.get("data-src")
-                if image_url and not image_url.startswith("http"):
-                    image_url = urljoin(self.base_url, image_url)
+            for selector in img_selectors:
+                img_el = card.select_one(selector)
+                if img_el:
+                    # Prefer data-src (full image) over src (placeholder)
+                    image_url = img_el.get("data-src") or img_el.get("data-lazy-src") or img_el.get("src")
+                    # Skip placeholder images
+                    if image_url and ("placeholder" in image_url or "/util/" in image_url or "no-image" in image_url or "data:image" in image_url):
+                        image_url = img_el.get("data-src") or img_el.get("data-original")
+                    if image_url and not image_url.startswith("http"):
+                        image_url = urljoin(self.base_url, image_url)
+                    if image_url and "placeholder" not in image_url and "data:image" not in image_url:
+                        break
+                    image_url = None
 
             # Generate source ID from URL
             source_id = None
             if url:
-                slug_match = re.search(r'/listing/cms/([^/]+)/?', url)
+                slug_match = re.search(r'/listing/(?:cms/)?([^/]+)/?', url)
                 if slug_match:
                     source_id = f"bluesummit_{slug_match.group(1)}"
 
@@ -227,4 +365,6 @@ class BlueSummitScraper(BrowserScraper):
 
         except Exception as e:
             print(f"[{self.source_name}] Error parsing card: {e}")
+            import traceback
+            traceback.print_exc()
             return None
