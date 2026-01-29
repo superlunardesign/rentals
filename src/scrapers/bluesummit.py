@@ -47,8 +47,16 @@ class BlueSummitScraper(BrowserScraper):
         """Scrape listings using Playwright browser."""
         listings = []
 
-        browser = await self._get_browser_async()
+        # Use Chromium specifically for this site (Firefox gets 403)
+        from playwright.async_api import async_playwright
+        print(f"[{self.source_name}] Starting Playwright with Chromium...")
+        self._playwright = await async_playwright().start()
+        browser = await self._playwright.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
+        )
         page, context = await self._create_stealth_page(browser)
+        self._browser = browser
 
         try:
             print(f"[{self.source_name}] Loading page: {self.base_url}")
