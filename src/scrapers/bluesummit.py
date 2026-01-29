@@ -66,51 +66,65 @@ class BlueSummitScraper(BrowserScraper):
                 await page.wait_for_timeout(10000)
                 page_title = await page.title()
 
-            # Navigate directly to the #listings anchor if present
+            # Wait for the #listings container to exist first (Vue.js app mounts here)
+            print(f"[{self.source_name}] Waiting for #listings container...")
+            try:
+                await page.wait_for_selector('#listings', timeout=10000)
+                print(f"[{self.source_name}] #listings container found")
+            except Exception:
+                print(f"[{self.source_name}] #listings container not found")
+
+            # Wait for .snippet-listings which contains the actual cards
+            print(f"[{self.source_name}] Waiting for .snippet-listings...")
+            try:
+                await page.wait_for_selector('.snippet-listings', timeout=10000)
+                print(f"[{self.source_name}] .snippet-listings found")
+            except Exception:
+                print(f"[{self.source_name}] .snippet-listings not found")
+
+            # Scroll to the listings section to ensure visibility
             print(f"[{self.source_name}] Scrolling to listings section...")
             try:
-                # Try to scroll to the listings section specifically
                 await page.evaluate("""
-                    const listingsSection = document.querySelector('#listings') ||
-                                           document.querySelector('[id*="listing"]') ||
-                                           document.querySelector('.listings');
+                    const listingsSection = document.querySelector('#listings');
                     if (listingsSection) {
-                        listingsSection.scrollIntoView({ behavior: 'smooth' });
-                    } else {
-                        window.scrollTo(0, document.body.scrollHeight / 2);
+                        listingsSection.scrollIntoView({ behavior: 'instant', block: 'start' });
                     }
                 """)
                 await page.wait_for_timeout(2000)
             except Exception as e:
                 print(f"[{self.source_name}] Scroll to section failed: {e}")
 
-            # Scroll down further to trigger lazy loading
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(2000)
-
-            # Try multiple potential selectors for listings
-            selectors_to_try = [
-                'a.teaser__card',
-                '.teaser__card',
-                '[class*="teaser"][class*="card"]',
-                '.listing-card',
-                '.property-card',
-                'a[href*="/listing/"]',
-                '#listings a[href*="/listing/"]',
-                '.listings a',
-            ]
-
-            # Wait for listings to load
-            print(f"[{self.source_name}] Waiting for listings to load...")
+            # Wait specifically for the teaser cards to render (Vue.js content)
+            print(f"[{self.source_name}] Waiting for listing cards to render...")
             found_selector = None
-            for selector in selectors_to_try:
-                try:
-                    await page.wait_for_selector(selector, timeout=5000)
-                    found_selector = selector
-                    print(f"[{self.source_name}] Listings found with selector: {selector}")
-                    break
-                except Exception:
-                    continue
+
+            # Primary selector - this matches the actual HTML structure
+            try:
+                await page.wait_for_selector('#listings .snippet-listings a.teaser__card', timeout=15000)
+                found_selector = '#listings .snippet-listings a.teaser__card'
+                print(f"[{self.source_name}] Listings found with selector: {found_selector}")
+            except Exception:
+                print(f"[{self.source_name}] Primary selector timed out, trying alternatives...")
+
+            # Fallback selectors
+            if not found_selector:
+                selectors_to_try = [
+                    'a.teaser.teaser__card',
+                    'a.teaser__card',
+                    '.teasers a.teaser__card',
+                    '.snippet-listings a[href*="/listing/"]',
+                    '#listings a[href*="/listing/"]',
+                    'a[href*="/listing/cms/"]',
+                ]
+                for selector in selectors_to_try:
+                    try:
+                        await page.wait_for_selector(selector, timeout=3000)
+                        found_selector = selector
+                        print(f"[{self.source_name}] Listings found with fallback selector: {selector}")
+                        break
+                    except Exception:
+                        continue
 
             if not found_selector:
                 print(f"[{self.source_name}] No listings found with standard selectors, analyzing page...")
