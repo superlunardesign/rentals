@@ -305,7 +305,8 @@ class OlyrentsScraper(BrowserScraper):
                     city = city_match.group(1).title()
                     state = "WA"
 
-            source_id = f"olyrents_{index}_{abs(hash(address))}"[:20]
+            # Use address-based hash for stable ID (don't include index which changes with order)
+            source_id = f"olyrents_{abs(hash(address))}"
 
             return ScrapedListing(
                 source_name=self.source_name,
@@ -404,8 +405,11 @@ class OlyrentsScraper(BrowserScraper):
                     city = city_match.group(1).title()
                     state = "WA"
 
-            # Generate source ID
-            source_id = f"olyrents_{index}_{abs(hash(address or str(rent)))}"[:20]
+            # Generate stable source ID based on address (don't include index which changes with order)
+            source_id = f"olyrents_{abs(hash(address or ''))}"
+            # If no address, fall back to rent-based ID
+            if not address and rent:
+                source_id = f"olyrents_rent_{rent}"
 
             if not address and not rent:
                 return None
