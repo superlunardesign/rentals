@@ -126,7 +126,7 @@ sources:
 
   - name: "Blue Summit Realty"
     scraper: "bluesummit"
-    url: "https://www.bluesummitrealty.com/property-management/#listings"
+    url: "https://www.bluesummitrealty.com/property-management/"
     enabled: true
 
   - name: "Invitation Homes"

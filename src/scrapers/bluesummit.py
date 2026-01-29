@@ -19,7 +19,7 @@ class BlueSummitScraper(BrowserScraper):
     Uses Playwright browser to render JavaScript content.
     """
 
-    def __init__(self, url: str = "https://www.bluesummitrealty.com/property-management/#listings"):
+    def __init__(self, url: str = "https://www.bluesummitrealty.com/property-management/"):
         super().__init__(source_name="bluesummit", base_url=url)
         self._on_listing_callback = None
 
