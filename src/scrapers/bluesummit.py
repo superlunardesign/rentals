@@ -150,13 +150,9 @@ class BlueSummitScraper(BrowserScraper):
                 # Get HTML and analyze structure
                 html = await page.content()
 
-                # Save HTML for debugging
-                try:
-                    with open("/tmp/bluesummit_debug.html", "w") as f:
-                        f.write(html)
-                    print(f"[{self.source_name}] HTML saved to /tmp/bluesummit_debug.html")
-                except Exception as e:
-                    print(f"[{self.source_name}] Could not save HTML: {e}")
+                # Log first 2000 chars of HTML for debugging
+                print(f"[{self.source_name}] HTML preview (first 2000 chars):")
+                print(html[:2000])
 
                 soup = BeautifulSoup(html, "lxml")
 
