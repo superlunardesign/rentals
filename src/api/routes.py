@@ -371,18 +371,22 @@ async def geocode_all_listings(db: Session = Depends(get_db)):
             print(f"[geocode-all] Starting geocoding of {len(listings)} listings...")
 
             for i, listing in enumerate(listings):
-                # Build full address
-                address_parts = []
-                if listing.address:
-                    address_parts.append(listing.address)
-                if listing.city:
-                    address_parts.append(listing.city)
-                if listing.state:
-                    address_parts.append(listing.state)
-                if listing.zip_code:
-                    address_parts.append(listing.zip_code)
-
-                full_address = ", ".join(address_parts)
+                # Build address for geocoding
+                # If address already contains state/zip, use it as-is to avoid duplication
+                if listing.address and (listing.state and listing.state in listing.address
+                                        or listing.zip_code and listing.zip_code in listing.address):
+                    full_address = listing.address
+                else:
+                    address_parts = []
+                    if listing.address:
+                        address_parts.append(listing.address)
+                    if listing.city:
+                        address_parts.append(listing.city)
+                    if listing.state:
+                        address_parts.append(listing.state)
+                    if listing.zip_code:
+                        address_parts.append(listing.zip_code)
+                    full_address = ", ".join(address_parts)
 
                 if not full_address:
                     print(f"[geocode-all] {i+1}/{len(listings)}: No address for listing {listing.id}")
