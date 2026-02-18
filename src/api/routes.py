@@ -328,6 +328,107 @@ async def rematch_all_listings(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/listings/geocode-all")
+async def geocode_all_listings(db: Session = Depends(get_db)):
+    """Geocode all listings that are missing coordinates."""
+    import threading
+    import time
+
+    from ..services import GeocodingService
+
+    # Get count of listings needing geocoding
+    listings_to_geocode = db.query(Listing).filter(
+        Listing.is_active == True,
+        (Listing.latitude == None) | (Listing.longitude == None)
+    ).all()
+
+    total_to_geocode = len(listings_to_geocode)
+
+    if total_to_geocode == 0:
+        return {
+            "status": "ok",
+            "message": "All listings already have coordinates",
+            "total": 0,
+            "geocoded": 0,
+            "failed": 0
+        }
+
+    def geocode_in_background():
+        """Run geocoding in background to avoid timeout."""
+        geocoder = GeocodingService()
+        geocoded = 0
+        failed = 0
+
+        # Create new session for background thread
+        background_db = SessionLocal()
+
+        try:
+            listings = background_db.query(Listing).filter(
+                Listing.is_active == True,
+                (Listing.latitude == None) | (Listing.longitude == None)
+            ).all()
+
+            print(f"[geocode-all] Starting geocoding of {len(listings)} listings...")
+
+            for i, listing in enumerate(listings):
+                # Build full address
+                address_parts = []
+                if listing.address:
+                    address_parts.append(listing.address)
+                if listing.city:
+                    address_parts.append(listing.city)
+                if listing.state:
+                    address_parts.append(listing.state)
+                if listing.zip_code:
+                    address_parts.append(listing.zip_code)
+
+                full_address = ", ".join(address_parts)
+
+                if not full_address:
+                    print(f"[geocode-all] {i+1}/{len(listings)}: No address for listing {listing.id}")
+                    failed += 1
+                    continue
+
+                coords = geocoder.geocode_address(full_address)
+
+                if coords:
+                    listing.latitude = coords[0]
+                    listing.longitude = coords[1]
+                    listing.distance_miles = geocoder.calculate_distance(coords[0], coords[1])
+                    geocoded += 1
+                    print(f"[geocode-all] {i+1}/{len(listings)}: {listing.address} -> {coords}")
+                else:
+                    failed += 1
+                    print(f"[geocode-all] {i+1}/{len(listings)}: Failed to geocode {full_address}")
+
+                # Rate limit to avoid hitting Nominatim limits (1 req/sec)
+                time.sleep(1.1)
+
+                # Commit periodically
+                if (i + 1) % 10 == 0:
+                    background_db.commit()
+
+            background_db.commit()
+            print(f"[geocode-all] Complete: {geocoded} geocoded, {failed} failed")
+
+        except Exception as e:
+            print(f"[geocode-all] Error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            background_db.close()
+
+    # Start in background thread
+    thread = threading.Thread(target=geocode_in_background, daemon=True)
+    thread.start()
+
+    return {
+        "status": "ok",
+        "message": f"Geocoding {total_to_geocode} listings in background",
+        "total": total_to_geocode,
+    }
+
+
 @router.post("/telegram/test")
 async def test_telegram():
     """Test Telegram notification setup."""

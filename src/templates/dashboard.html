@@ -557,6 +557,7 @@
             <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
             <button type="button" class="secondary" onclick="testTelegram()">Test Telegram</button>
             <button type="button" class="map-toggle-btn" onclick="toggleMap()">Show Map</button>
+            <button type="button" class="secondary" onclick="geocodeAll()">Geocode All</button>
 
             <span style="margin-left: 20px; color: #666;">Recheck:</span>
             <select id="scrape-interval" onchange="updateInterval(this.value)" style="padding: 6px 10px;">
@@ -1071,6 +1072,20 @@
                 alert(msg);
             } catch (e) {
                 alert('Failed to test Telegram: ' + e.message);
+            }
+        }
+
+        async function geocodeAll() {
+            try {
+                const response = await fetch('/listings/geocode-all', { method: 'POST' });
+                const data = await response.json();
+                if (data.total === 0) {
+                    alert('All listings already have coordinates!');
+                } else {
+                    alert(`Geocoding ${data.total} listings in background.\n\nThis uses a rate-limited API, so it may take a few minutes.\nRefresh the page and check the map when done.`);
+                }
+            } catch (e) {
+                alert('Failed to start geocoding: ' + e.message);
             }
         }
 
