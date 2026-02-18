@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rental Search - Tumwater/Olympia</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
             box-sizing: border-box;
@@ -411,6 +413,93 @@
                 align-items: stretch;
             }
         }
+
+        /* Map styles */
+        #map-container {
+            display: none;
+            height: 500px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        #map-container.visible {
+            display: block;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-toggle-btn {
+            background: #27ae60 !important;
+        }
+
+        .map-toggle-btn:hover {
+            background: #229954 !important;
+        }
+
+        .map-toggle-btn.active {
+            background: #e74c3c !important;
+        }
+
+        /* Custom marker popups */
+        .map-popup {
+            min-width: 200px;
+        }
+
+        .map-popup img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .map-popup .popup-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .map-popup .popup-price {
+            color: #27ae60;
+            font-weight: 700;
+            font-size: 1.1em;
+        }
+
+        .map-popup .popup-specs {
+            color: #666;
+            font-size: 0.9em;
+            margin: 4px 0;
+        }
+
+        .map-popup .popup-link {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 12px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+
+        .map-popup .popup-link:hover {
+            background: #2980b9;
+        }
+
+        /* Marker colors by tier */
+        .marker-best-match {
+            filter: hue-rotate(100deg);
+        }
+        .marker-match {
+            filter: hue-rotate(200deg);
+        }
+        .marker-flexible {
+            filter: hue-rotate(30deg);
+        }
     </style>
 </head>
 <body>
@@ -467,6 +556,7 @@
             <button type="button" class="scrape-btn" onclick="runScrape()">Run Scrape Now</button>
             <button type="button" class="secondary" onclick="rematchAll()">Re-match All</button>
             <button type="button" class="secondary" onclick="testTelegram()">Test Telegram</button>
+            <button type="button" class="map-toggle-btn" onclick="toggleMap()">Show Map</button>
 
             <span style="margin-left: 20px; color: #666;">Recheck:</span>
             <select id="scrape-interval" onchange="updateInterval(this.value)" style="padding: 6px 10px;">
@@ -478,6 +568,11 @@
                 <option value="1440">1 day</option>
             </select>
         </form>
+
+        <!-- Map View -->
+        <div id="map-container">
+            <div id="map"></div>
+        </div>
 
         {% if grouped.favorites %}
         <section class="section favorites">
@@ -1017,6 +1112,138 @@
 
         // Load status on page load
         document.addEventListener('DOMContentLoaded', loadSchedulerStatus);
+
+        // ===== MAP FUNCTIONALITY =====
+        let map = null;
+        let mapLoaded = false;
+        let markers = [];
+
+        async function toggleMap() {
+            const container = document.getElementById('map-container');
+            const btn = document.querySelector('.map-toggle-btn');
+
+            if (container.classList.contains('visible')) {
+                // Hide map
+                container.classList.remove('visible');
+                btn.textContent = 'Show Map';
+                btn.classList.remove('active');
+            } else {
+                // Show map
+                container.classList.add('visible');
+                btn.textContent = 'Hide Map';
+                btn.classList.add('active');
+
+                // Initialize map if not already done
+                if (!mapLoaded) {
+                    await initMap();
+                }
+            }
+        }
+
+        async function initMap() {
+            // Load Leaflet JS dynamically
+            if (!window.L) {
+                await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
+            }
+
+            try {
+                // Fetch listings with coordinates
+                const response = await fetch('/api/listings/map');
+                const data = await response.json();
+
+                // Initialize map centered on config location
+                map = L.map('map').setView([data.center.latitude, data.center.longitude], 12);
+
+                // Add OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                // Add center marker (your location)
+                L.marker([data.center.latitude, data.center.longitude], {
+                    icon: L.divIcon({
+                        className: 'center-marker',
+                        html: '<div style="background:#e74c3c;width:20px;height:20px;border-radius:50%;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>',
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    })
+                }).addTo(map).bindPopup('<strong>Search Center</strong><br>Tumwater, WA');
+
+                // Add listing markers
+                data.listings.forEach(listing => {
+                    const color = getMarkerColor(listing.match_tier);
+                    const marker = L.marker([listing.latitude, listing.longitude], {
+                        icon: L.divIcon({
+                            className: 'listing-marker',
+                            html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7]
+                        })
+                    }).addTo(map);
+
+                    // Create popup content
+                    const popup = createPopup(listing);
+                    marker.bindPopup(popup, { maxWidth: 250 });
+
+                    markers.push(marker);
+                });
+
+                mapLoaded = true;
+                console.log(`Map loaded with ${data.listings.length} markers`);
+
+            } catch (e) {
+                console.error('Failed to load map:', e);
+                document.getElementById('map').innerHTML = '<p style="padding:20px;text-align:center;">Failed to load map. Please try again.</p>';
+            }
+        }
+
+        function getMarkerColor(tier) {
+            switch(tier) {
+                case 'best_match': return '#27ae60';
+                case 'match': return '#3498db';
+                case 'flexible': return '#f39c12';
+                default: return '#95a5a6';
+            }
+        }
+
+        function createPopup(listing) {
+            let html = '<div class="map-popup">';
+
+            if (listing.image_url) {
+                html += `<img src="${listing.image_url}" alt="${listing.address || 'Property'}" onerror="this.style.display='none'">`;
+            }
+
+            html += `<div class="popup-title">${listing.address || listing.title || 'Unknown'}</div>`;
+
+            if (listing.rent) {
+                html += `<div class="popup-price">$${listing.rent.toLocaleString()}/mo</div>`;
+            }
+
+            const specs = [];
+            if (listing.bedrooms) specs.push(`${listing.bedrooms} bed`);
+            if (listing.bathrooms) specs.push(`${listing.bathrooms} bath`);
+            if (listing.sqft) specs.push(`${listing.sqft.toLocaleString()} sqft`);
+            if (specs.length) {
+                html += `<div class="popup-specs">${specs.join(' | ')}</div>`;
+            }
+
+            if (listing.url) {
+                html += `<a href="${listing.url}" target="_blank" class="popup-link">View Listing</a>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
     </script>
 </body>
 </html>

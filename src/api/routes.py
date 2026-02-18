@@ -387,6 +387,54 @@ async def get_listings(
             "is_favorite": l.is_favorite,
             "source": l.source_name,
             "distance_miles": l.distance_miles,
+            "latitude": l.latitude,
+            "longitude": l.longitude,
+            "image_url": l.image_url,
         }
         for l in listings
     ]
+
+
+@router.get("/api/listings/map")
+async def get_listings_for_map(
+    db: Session = Depends(get_db),
+):
+    """API endpoint to get listings with coordinates for map display."""
+    config = get_config()
+
+    # Get all active, non-hidden listings with coordinates
+    listings = db.query(Listing).filter(
+        Listing.is_active == True,
+        Listing.is_hidden == False,
+    ).all()
+
+    # Filter to only those with coordinates
+    listings_with_coords = [
+        {
+            "id": l.id,
+            "title": l.title,
+            "url": l.url,
+            "rent": l.rent,
+            "bedrooms": l.bedrooms,
+            "bathrooms": l.bathrooms,
+            "sqft": l.sqft,
+            "address": l.address,
+            "city": l.city,
+            "match_tier": l.match_tier,
+            "is_new": l.is_new,
+            "is_favorite": l.is_favorite,
+            "latitude": l.latitude,
+            "longitude": l.longitude,
+            "image_url": l.image_url,
+        }
+        for l in listings
+        if l.latitude and l.longitude
+    ]
+
+    return {
+        "center": {
+            "latitude": config.location.latitude,
+            "longitude": config.location.longitude,
+        },
+        "listings": listings_with_coords,
+    }
