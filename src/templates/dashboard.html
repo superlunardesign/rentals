@@ -1079,7 +1079,9 @@
             try {
                 const response = await fetch('/listings/geocode-all', { method: 'POST' });
                 const data = await response.json();
-                if (data.total === 0) {
+                if (data.status === 'already_running') {
+                    alert('Geocoding is already in progress. Please wait for it to complete.');
+                } else if (data.total === 0) {
                     alert('All listings already have coordinates!');
                 } else {
                     alert(`Geocoding ${data.total} listings in background.\n\nThis uses a rate-limited API, so it may take a few minutes.\nRefresh the page and check the map when done.`);
