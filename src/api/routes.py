@@ -334,7 +334,6 @@ _geocoding_in_progress = False
 @router.post("/listings/geocode-all")
 async def geocode_all_listings(db: Session = Depends(get_db)):
     """Geocode all listings that are missing coordinates."""
-    import re
     import threading
     import time
 
@@ -367,39 +366,6 @@ async def geocode_all_listings(db: Session = Depends(get_db)):
             "failed": 0
         }
 
-    def clean_address_for_geocoding(address: str) -> str:
-        """Clean address to improve geocoding success."""
-        if not address:
-            return ""
-
-        cleaned = address
-
-        # Remove unit/apartment suffixes (e.g., "- Unit A", "#101", "Apt 5", "- D8")
-        # Pattern: dash or hash followed by unit identifier at end or before comma
-        cleaned = re.sub(r'\s*[-#]\s*(?:Unit\s*)?[A-Za-z]?\d*[A-Za-z]?\s*(?:,|$)', '', cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r'\s*(?:Unit|Apt\.?|Suite|Ste\.?|#)\s*[A-Za-z0-9-]+\s*(?:,|$)', '', cleaned, flags=re.IGNORECASE)
-
-        # Remove duplicate unit numbers like "201A, 201A"
-        cleaned = re.sub(r',?\s*\d+[A-Za-z]?,\s*\d+[A-Za-z]?(?=,|$)', '', cleaned)
-
-        # Remove quotes from street names (e.g., 'S "I" St' -> 'S I St')
-        cleaned = cleaned.replace('"', '').replace("'", "")
-
-        # Remove duplicate city names (e.g., "Lacey, Lacey, WA" -> "Lacey, WA")
-        parts = [p.strip() for p in cleaned.split(',')]
-        deduped = []
-        for p in parts:
-            if not deduped or p.upper() != deduped[-1].upper():
-                deduped.append(p)
-        cleaned = ', '.join(deduped)
-
-        # Clean up extra whitespace
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        cleaned = re.sub(r',\s*,', ',', cleaned)
-        cleaned = cleaned.strip(' ,')
-
-        return cleaned
-
     def geocode_in_background():
         """Run geocoding in background to avoid timeout."""
         global _geocoding_in_progress
@@ -421,8 +387,7 @@ async def geocode_all_listings(db: Session = Depends(get_db)):
             print(f"[geocode-all] Starting geocoding of {len(listings)} listings...")
 
             for i, listing in enumerate(listings):
-                # Build address for geocoding
-                # If address already contains state/zip, use it as-is to avoid duplication
+                # Build full address for geocoding
                 if listing.address and (listing.state and listing.state in listing.address
                                         or listing.zip_code and listing.zip_code in listing.address):
                     full_address = listing.address
@@ -443,20 +408,23 @@ async def geocode_all_listings(db: Session = Depends(get_db)):
                     failed += 1
                     continue
 
-                # Clean address for better geocoding results
-                cleaned_address = clean_address_for_geocoding(full_address)
-
-                coords = geocoder.geocode_address(cleaned_address)
+                # Use fallback geocoding (tries cleaned address, then simplified, then zip)
+                coords = geocoder.geocode_with_fallback(
+                    full_address,
+                    city=listing.city,
+                    state=listing.state,
+                    zip_code=listing.zip_code
+                )
 
                 if coords:
                     listing.latitude = coords[0]
                     listing.longitude = coords[1]
                     listing.distance_miles = geocoder.calculate_distance(coords[0], coords[1])
                     geocoded += 1
-                    print(f"[geocode-all] {i+1}/{len(listings)}: {cleaned_address} -> {coords}")
+                    print(f"[geocode-all] {i+1}/{len(listings)}: {listing.address} -> {coords}")
                 else:
                     failed += 1
-                    print(f"[geocode-all] {i+1}/{len(listings)}: Failed to geocode {cleaned_address}")
+                    print(f"[geocode-all] {i+1}/{len(listings)}: Failed to geocode: {listing.address}")
 
                 # Rate limit to avoid hitting Nominatim limits (1 req/sec)
                 time.sleep(1.1)
@@ -466,7 +434,7 @@ async def geocode_all_listings(db: Session = Depends(get_db)):
                     background_db.commit()
 
             background_db.commit()
-            print(f"[geocode-all] Complete: {geocoded} geocoded, {failed} failed")
+            print(f"[geocode-all] Complete: {geocoded} geocoded, {failed} failed out of {len(listings)}")
 
         except Exception as e:
             print(f"[geocode-all] Error: {e}")
