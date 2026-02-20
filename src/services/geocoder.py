@@ -102,6 +102,29 @@ class GeocodingService:
 
         return None
 
+    def reverse_geocode_zip(self, lat: float, lon: float) -> Optional[str]:
+        """
+        Reverse geocode coordinates to extract a zip/postal code.
+        Returns the 5-digit zip code or None if not found.
+        """
+        cache_key = f"reverse:{lat:.6f},{lon:.6f}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        try:
+            location = self.geolocator.reverse(f"{lat}, {lon}", timeout=10)
+            if location and location.raw and "address" in location.raw:
+                postcode = location.raw["address"].get("postcode")
+                if postcode:
+                    zip5 = postcode[:5]
+                    self._cache[cache_key] = zip5
+                    print(f"[geocoder] Reverse geocoded ({lat:.4f}, {lon:.4f}) -> zip {zip5}")
+                    return zip5
+        except Exception as e:
+            print(f"[geocoder] Error reverse geocoding ({lat}, {lon}): {e}")
+
+        return None
+
     def geocode_with_fallback(self, address: str, city: str = None, state: str = None, zip_code: str = None) -> Optional[tuple[float, float]]:
         """
         Try geocoding with progressively simpler address forms.

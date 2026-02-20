@@ -301,7 +301,19 @@ class ScraperService:
             )
         elif scraped.address:
             full_addr = f"{scraped.address}, {scraped.city or ''}, {scraped.state or 'WA'}"
-            listing.distance_miles = self.geocoder.calculate_distance(None, None, full_addr)
+            coords = self.geocoder.geocode_address(full_addr)
+            if coords:
+                listing.latitude = coords[0]
+                listing.longitude = coords[1]
+                listing.distance_miles = self.geocoder.calculate_distance(coords[0], coords[1])
+
+        # Fill missing zip code via reverse geocoding
+        if not listing.zip_code and listing.latitude and listing.longitude:
+            listing.zip_code = self.geocoder.reverse_geocode_zip(
+                listing.latitude, listing.longitude
+            )
+            if listing.zip_code:
+                print(f"[scraper] Filled missing zip for '{(listing.title or 'Unknown')[:35]}' -> {listing.zip_code}")
 
         # Run matching
         self.matcher.update_listing_match(listing)
