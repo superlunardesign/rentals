@@ -411,12 +411,9 @@ class MatchingService:
                 print(f"[matcher] {title_short}: FLEXIBLE (zip {listing_zip} not in preferred zips)")
                 return MatchTier.FLEXIBLE
             elif not listing_zip:
-                # No zip code available - check if city is Lacey (always FLEXIBLE)
-                listing_city = listing.city
-                if not listing_city and listing.zip_code:
-                    listing_city = self._infer_city_from_zip(listing)
-                if listing_city and listing_city.lower() == "lacey":
-                    return MatchTier.FLEXIBLE
+                # No zip code available - can't verify location, always FLEXIBLE
+                print(f"[matcher] {title_short}: FLEXIBLE (no zip code, can't verify preferred location)")
+                return MatchTier.FLEXIBLE
 
         # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
         text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
