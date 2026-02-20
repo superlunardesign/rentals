@@ -411,9 +411,9 @@ class MatchingService:
                 print(f"[matcher] {title_short}: FLEXIBLE (zip {listing_zip} not in preferred zips)")
                 return MatchTier.FLEXIBLE
             elif not listing_zip:
-                # No zip code available - can't verify location, always FLEXIBLE
-                print(f"[matcher] {title_short}: FLEXIBLE (no zip code, can't verify preferred location)")
-                return MatchTier.FLEXIBLE
+                # No zip code available - can't verify location, exclude
+                print(f"[matcher] {title_short}: EXCLUDED (no zip code provided)")
+                return MatchTier.EXCLUDED
 
         # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
         text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
