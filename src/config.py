@@ -15,6 +15,7 @@ class LocationConfig(BaseModel):
     radius_miles: int
     flexible_radius_miles: int
     allowed_cities: list[str] = []  # If set, only show listings from these cities
+    preferred_zips: list[str] = []  # Zip codes eligible for BEST_MATCH/MATCH tiers
 
 
 class BudgetConfig(BaseModel):

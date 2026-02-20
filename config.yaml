@@ -15,6 +15,12 @@ location:
     - Tumwater
     - Olympia
     - Lacey
+  # Zip codes eligible for BEST_MATCH/MATCH tiers
+  # Listings in other local zips still show but as FLEXIBLE
+  preferred_zips:
+    - "98512"   # Tumwater
+    - "98501"   # Olympia
+    - "98506"   # Olympia
 
 budget:
   max_rent: 2600  # Your max budget

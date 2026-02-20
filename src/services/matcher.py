@@ -98,6 +98,13 @@ class MatchingService:
         score += distance_status["score"]
         score += min(len(matched_keywords) * 5, 20)  # Up to +20 for keywords
 
+        # Bonus for preferred zip codes
+        preferred_zips = self.config.location.preferred_zips
+        if preferred_zips and listing.zip_code:
+            listing_zip = listing.zip_code[:5] if len(listing.zip_code) >= 5 else listing.zip_code
+            if listing_zip in preferred_zips:
+                score += 5
+
         reasons.extend(budget_status["reasons"])
         reasons.extend(rooms_status["reasons"])
         reasons.extend(distance_status["reasons"])
@@ -395,13 +402,21 @@ class MatchingService:
             print(f"[matcher] {title_short}: FLEXIBLE (unknown city, city={listing.city}, zip={listing.zip_code})")
             return MatchTier.FLEXIBLE
 
-        # Lacey listings are always FLEXIBLE tier (user preference)
-        # Check both explicit city and inferred city from zip code
-        listing_city = listing.city
-        if not listing_city and listing.zip_code:
-            listing_city = self._infer_city_from_zip(listing)
-        if listing_city and listing_city.lower() == "lacey":
-            return MatchTier.FLEXIBLE
+        # Check zip code preference - listings outside preferred zips go to FLEXIBLE
+        # This catches cases where city says "Olympia" but zip is actually further out
+        preferred_zips = self.config.location.preferred_zips
+        if preferred_zips:
+            listing_zip = listing.zip_code[:5] if listing.zip_code and len(listing.zip_code) >= 5 else listing.zip_code
+            if listing_zip and listing_zip not in preferred_zips:
+                print(f"[matcher] {title_short}: FLEXIBLE (zip {listing_zip} not in preferred zips)")
+                return MatchTier.FLEXIBLE
+            elif not listing_zip:
+                # No zip code available - check if city is Lacey (always FLEXIBLE)
+                listing_city = listing.city
+                if not listing_city and listing.zip_code:
+                    listing_city = self._infer_city_from_zip(listing)
+                if listing_city and listing_city.lower() == "lacey":
+                    return MatchTier.FLEXIBLE
 
         # Townhouses, duplexes, and multi-unit properties are always FLEXIBLE tier
         text = f"{listing.title or ''} {listing.address or ''} {listing.description or ''} {listing.features or ''}"
