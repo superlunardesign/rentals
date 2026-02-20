@@ -154,6 +154,11 @@ sources:
     url: "https://elitesheltonrentals.managebuilding.com/Resident/Public/Rentals"
     enabled: true
 
+  - name: "Utopia Management Tacoma"
+    scraper: "utopiamanagement"
+    url: "https://utopiamanagement.com/rental-list/tacoma-wa"
+    enabled: true
+
   # --- Slow browser-based scrapers (run last) ---
   - name: "Vanguard Realty"
     scraper: "vanguardrealty"

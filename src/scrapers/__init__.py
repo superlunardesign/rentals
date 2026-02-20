@@ -19,6 +19,7 @@ from .mvppropertypros import MVPPropertyProsScraper
 from .welcomehomerentals import WelcomeHomeRentalsScraper
 from .vanguardrealty import VanguardRealtyScraper
 from .elitesheltonrentals import EliteSheltonRentalsScraper
+from .utopiamanagement import UtopiaManagementScraper
 
 SCRAPERS = {
     "olyrents": OlyrentsScraper,
@@ -41,6 +42,7 @@ SCRAPERS = {
     "welcomehomerentals": WelcomeHomeRentalsScraper,
     "vanguardrealty": VanguardRealtyScraper,
     "elitesheltonrentals": EliteSheltonRentalsScraper,
+    "utopiamanagement": UtopiaManagementScraper,
 }
 
 __all__ = [
@@ -66,5 +68,6 @@ __all__ = [
     "WelcomeHomeRentalsScraper",
     "VanguardRealtyScraper",
     "EliteSheltonRentalsScraper",
+    "UtopiaManagementScraper",
     "SCRAPERS",
 ]
