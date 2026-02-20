@@ -119,12 +119,47 @@ sources:
     url: "https://rantsgroup.appfolio.com/listings"
     enabled: true
 
+  - name: "RPM WA 018"
+    scraper: "rpmwa018"
+    url: "https://rpmwa018.appfolio.com/listings"
+    enabled: true
+
+  - name: "Bennett Properties"
+    scraper: "bennettprops"
+    url: "https://bennettprops.appfolio.com/listings"
+    enabled: true
+
+  - name: "Narrows Property Management"
+    scraper: "narrowspm"
+    url: "https://narrowspm.appfolio.com/listings"
+    enabled: true
+
+  - name: "MVP Property Pros"
+    scraper: "mvppropertypros"
+    url: "https://mvppropertypros.appfolio.com/listings/"
+    enabled: true
+
+  - name: "Welcome Home Rentals"
+    scraper: "welcomehomerentals"
+    url: "https://welcomehomerentals.appfolio.com/listings"
+    enabled: true
+
   - name: "Capitol Property Management"
     scraper: "capitol_pm"
     url: "https://capitol-pm.managebuilding.com/Resident/Public/Rentals"
     enabled: true
 
+  - name: "Elite Shelton Rentals"
+    scraper: "elitesheltonrentals"
+    url: "https://elitesheltonrentals.managebuilding.com/Resident/Public/Rentals"
+    enabled: true
+
   # --- Slow browser-based scrapers (run last) ---
+  - name: "Vanguard Realty"
+    scraper: "vanguardrealty"
+    url: "https://vanguardrealty.propertyware.com/rentals.html"
+    enabled: true
+
   - name: "Simply Home Realty"
     scraper: "simplyhome"
     url: "https://www.simplyhomerealty.com/lacey-homes-for-rent"
