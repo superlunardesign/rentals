@@ -12,18 +12,18 @@ from .base import BaseScraper, ScrapedListing
 class ZillowAPIScraper(BaseScraper):
     """Scraper that fetches rental listings from Zillow via RapidAPI.
 
-    Uses the zillow-real-estate-api batch search endpoint.
+    Uses the zillow-real-estate-api /v1/search endpoint (GET).
     Requires RAPIDAPI_KEY environment variable.
 
     Config url format: "zillow://location" where location is a city/state or zip.
     Example: "zillow://Olympia, WA" or "zillow://98512"
 
-    Multiple locations can be comma-separated:
+    Multiple locations can be pipe-separated:
     "zillow://Olympia, WA|Tumwater, WA|Lacey, WA"
     """
 
     RAPIDAPI_HOST = "zillow-real-estate-api.p.rapidapi.com"
-    SEARCH_URL = f"https://{RAPIDAPI_HOST}/v1/batch/search"
+    SEARCH_URL = f"https://{RAPIDAPI_HOST}/v1/search"
 
     def __init__(self, url: str = "zillow://Olympia, WA"):
         raw = url.replace("zillow://", "").strip()
@@ -67,48 +67,44 @@ class ZillowAPIScraper(BaseScraper):
         return listings
 
     def _fetch_results(self) -> Optional[list]:
-        """Fetch rental results using batch search."""
+        """Fetch rental results using individual GET /v1/search per location."""
         headers = {
             "X-RapidAPI-Key": self.api_key,
             "X-RapidAPI-Host": self.RAPIDAPI_HOST,
-            "Content-Type": "application/json",
         }
 
-        searches = []
+        all_results = []
         for location in self.locations:
-            searches.append({
+            params = {
                 "location": location,
                 "status": "for_rent",
                 "result_type": "list",
                 "page_size": 40,
                 "sort": "relevance",
-            })
+                "page": 1,
+            }
 
-        body = {"searches": searches}
+            try:
+                response = self.client.get(
+                    self.SEARCH_URL,
+                    headers=headers,
+                    params=params,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                data = response.json()
 
-        try:
-            response = self.client.post(
-                self.SEARCH_URL,
-                headers=headers,
-                json=body,
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            data = response.json()
+                if isinstance(data, dict):
+                    all_results.append(data)
+                elif isinstance(data, list):
+                    all_results.extend(data)
 
-            if isinstance(data, dict):
-                # Could be {"results": [...]} or {"data": [...]} or direct
-                return data.get("results") or data.get("data") or [data]
-            elif isinstance(data, list):
-                return data
-            return None
+            except httpx.HTTPStatusError as e:
+                print(f"[{self.source_name}] API error for {location}: {e.response.status_code} - {e.response.text[:200]}")
+            except Exception as e:
+                print(f"[{self.source_name}] Request error for {location}: {e}")
 
-        except httpx.HTTPStatusError as e:
-            print(f"[{self.source_name}] API error: {e.response.status_code} - {e.response.text[:200]}")
-            return None
-        except Exception as e:
-            print(f"[{self.source_name}] Request error: {e}")
-            return None
+        return all_results if all_results else None
 
     def _extract_properties(self, result: dict) -> list[dict]:
         """Extract property list from a search result, handling various response shapes."""

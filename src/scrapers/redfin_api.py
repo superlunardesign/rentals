@@ -1,4 +1,4 @@
-"""Redfin API scraper using RapidAPI redfin-com endpoint."""
+"""Redfin API scraper using RapidAPI realfin-us endpoint."""
 
 import os
 import re
@@ -14,17 +14,17 @@ class RedfinAPIScraper(BaseScraper):
 
     Requires RAPIDAPI_KEY environment variable.
 
-    Config url format: "redfin://location" where location is a city/state or zip.
-    Example: "redfin://Olympia, WA" or "redfin://98512"
+    Config url format: "redfin://<regionId>" where regionId is Redfin's
+    region identifier (e.g. "6_13223" for Olympia, WA).
     """
 
-    RAPIDAPI_HOST = "redfin-com-data.p.rapidapi.com"
-    SEARCH_URL = f"https://{RAPIDAPI_HOST}/properties/search-rent"
+    RAPIDAPI_HOST = "realfin-us.p.rapidapi.com"
+    SEARCH_URL = f"https://{RAPIDAPI_HOST}/search/region/for-rent"
 
-    def __init__(self, url: str = "redfin://Olympia, WA"):
-        location = url.replace("redfin://", "").strip()
+    def __init__(self, url: str = "redfin://6_13223"):
+        region_id = url.replace("redfin://", "").strip()
         super().__init__(source_name="redfin_api", base_url=url)
-        self.location = location
+        self.region_id = region_id
         self.api_key = os.environ.get("RAPIDAPI_KEY", "")
 
     def scrape(self) -> list[ScrapedListing]:
@@ -64,8 +64,7 @@ class RedfinAPIScraper(BaseScraper):
             "X-RapidAPI-Host": self.RAPIDAPI_HOST,
         }
         params = {
-            "location": self.location,
-            "status": "ForRent",
+            "regionId": self.region_id,
         }
 
         try:
@@ -154,7 +153,7 @@ class RedfinAPIScraper(BaseScraper):
             if url and not url.startswith("http"):
                 url = f"https://www.redfin.com{url}"
             if not url:
-                url = f"https://www.redfin.com/search?location={self.location}"
+                url = f"https://www.redfin.com/rentals"
 
             image_url = prop.get("photo") or prop.get("primaryPhoto") or prop.get("imgSrc")
 
