@@ -127,12 +127,17 @@ class RedfinAPIScraper(BaseScraper):
     def _parse_property(self, prop: dict) -> Optional[ScrapedListing]:
         """Parse a Redfin property object into a ScrapedListing.
 
-        Expected structure (from API):
+        Actual structure (from API):
           {
-            "addressInfo": {
-              "formattedStreetLine": "8915 52nd Ave SE",
-              "city": "Olympia", "state": "WA", "zip": "98513",
-              "centroid": {"centroid": {"latitude": 47.0, "longitude": -122.7}}
+            "homeData": {
+              "propertyId": "198938710",
+              "url": "/WA/Olympia/8915-52nd-Ave-SE-98513/home/198938710",
+              "addressInfo": {
+                "formattedStreetLine": "8915 52nd Ave SE",
+                "city": "Olympia", "state": "WA", "zip": "98513",
+                "centroid": {"centroid": {"latitude": 47.0, "longitude": -122.7}}
+              },
+              "staticMapUrl": "https://maps.google.com/..."
             },
             "rentalExtension": {
               "rentalId": "...",
@@ -140,17 +145,21 @@ class RedfinAPIScraper(BaseScraper):
               "bedRange": {"min": 3, "max": 4},
               "bathRange": {"min": 2.5, "max": 2.5},
               "sqftRange": {"min": 1752, "max": 1967},
-              "propertyName": "Manor House",
-              "description": "..."
+              "propertyName": "Manor House"
             }
           }
         """
         try:
-            addr_info = prop.get("addressInfo", {}) or {}
+            home_data = prop.get("homeData", {}) or {}
             rental = prop.get("rentalExtension", {}) or {}
+            addr_info = home_data.get("addressInfo", {}) or {}
 
             # ID
-            prop_id = str(rental.get("rentalId") or prop.get("propertyId") or prop.get("listingId") or "")
+            prop_id = str(
+                rental.get("rentalId")
+                or home_data.get("propertyId")
+                or ""
+            )
             if not prop_id:
                 return None
 
@@ -183,14 +192,14 @@ class RedfinAPIScraper(BaseScraper):
             bathrooms = bath_range.get("min")
             sqft = sqft_range.get("min")
 
-            # Location — nested centroid
+            # Location — nested centroid inside homeData.addressInfo
             centroid_outer = addr_info.get("centroid", {}) or {}
             centroid = centroid_outer.get("centroid", {}) or {}
             lat = centroid.get("latitude")
             lon = centroid.get("longitude")
 
-            # URL — build from address if not provided
-            url = prop.get("url") or ""
+            # URL — from homeData
+            url = home_data.get("url") or ""
             if url and not url.startswith("http"):
                 url = f"https://www.redfin.com{url}"
             if not url:
@@ -200,7 +209,7 @@ class RedfinAPIScraper(BaseScraper):
             prop_name = rental.get("propertyName", "")
             title = prop_name if prop_name else address_str
 
-            image_url = prop.get("photo") or prop.get("primaryPhoto") or prop.get("imgSrc")
+            image_url = home_data.get("staticMapUrl") or ""
 
             return ScrapedListing(
                 source_name=self.source_name,
