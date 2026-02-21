@@ -39,9 +39,14 @@ class RedfinAPIScraper(BaseScraper):
             if not results:
                 return []
 
-            homes = results.get("homes") or results.get("properties") or []
+            homes = results.get("data") or results.get("homes") or results.get("properties") or []
             if isinstance(results, list):
                 homes = results
+
+            if homes:
+                import json
+                print(f"[{self.source_name}] First item keys: {list(homes[0].keys()) if isinstance(homes[0], dict) else type(homes[0])}")
+                print(f"[{self.source_name}] First item preview: {json.dumps(homes[0], default=str)[:1500]}")
 
             for home in homes:
                 listing = self._parse_property(home)
@@ -120,79 +125,89 @@ class RedfinAPIScraper(BaseScraper):
             return None
 
     def _parse_property(self, prop: dict) -> Optional[ScrapedListing]:
-        """Parse a Redfin property object into a ScrapedListing."""
+        """Parse a Redfin property object into a ScrapedListing.
+
+        Expected structure (from API):
+          {
+            "addressInfo": {
+              "formattedStreetLine": "8915 52nd Ave SE",
+              "city": "Olympia", "state": "WA", "zip": "98513",
+              "centroid": {"centroid": {"latitude": 47.0, "longitude": -122.7}}
+            },
+            "rentalExtension": {
+              "rentalId": "...",
+              "rentPriceRange": {"min": 2925, "max": 2990},
+              "bedRange": {"min": 3, "max": 4},
+              "bathRange": {"min": 2.5, "max": 2.5},
+              "sqftRange": {"min": 1752, "max": 1967},
+              "propertyName": "Manor House",
+              "description": "..."
+            }
+          }
+        """
         try:
-            # Redfin uses various ID fields
-            prop_id = str(
-                prop.get("propertyId")
-                or prop.get("listingId")
-                or prop.get("mlsId")
-                or prop.get("id", "")
-            )
+            addr_info = prop.get("addressInfo", {}) or {}
+            rental = prop.get("rentalExtension", {}) or {}
+
+            # ID
+            prop_id = str(rental.get("rentalId") or prop.get("propertyId") or prop.get("listingId") or "")
             if not prop_id:
                 return None
 
-            # Address can be in different formats
-            address_obj = prop.get("address", {})
-            if isinstance(address_obj, dict):
-                street = address_obj.get("streetAddress", "") or address_obj.get("line", "")
-                city = address_obj.get("city", "")
-                state = address_obj.get("stateOrProvince", "") or address_obj.get("state", "")
-                zipcode = address_obj.get("postalCode", "") or address_obj.get("zip", "")
-            elif isinstance(address_obj, str):
-                street = address_obj
-                city = prop.get("city", "")
-                state = prop.get("state", "")
-                zipcode = prop.get("zip", "")
-            else:
-                street = prop.get("streetAddress", "") or prop.get("address", "")
-                city = prop.get("city", "")
-                state = prop.get("state", "")
-                zipcode = prop.get("zipcode", "") or prop.get("zip", "")
+            # Address
+            street = addr_info.get("formattedStreetLine", "")
+            city = addr_info.get("city", "")
+            state = addr_info.get("state", "")
+            zipcode = addr_info.get("zip", "")
 
             if street and city:
                 address_str = f"{street}, {city}, {state} {zipcode}".strip()
+            elif street:
+                address_str = street
             else:
-                address_str = str(street or "")
-
-            if not address_str:
                 return None
 
-            # Rent/price
-            rent = (
-                prop.get("price")
-                or prop.get("rent")
-                or prop.get("listPrice")
-                or prop.get("priceLabel")
-            )
+            # Rent — use min of rentPriceRange
+            price_range = rental.get("rentPriceRange", {}) or {}
+            rent = price_range.get("min") or price_range.get("max")
             if isinstance(rent, str):
                 rent = self.parse_rent(rent)
             elif isinstance(rent, (int, float)):
                 rent = int(rent)
 
-            bedrooms = prop.get("beds") or prop.get("bedrooms")
-            bathrooms = prop.get("baths") or prop.get("bathrooms")
-            sqft = prop.get("sqFt") or prop.get("sqft") or prop.get("livingArea")
+            # Beds/baths/sqft — use min of ranges
+            bed_range = rental.get("bedRange", {}) or {}
+            bath_range = rental.get("bathRange", {}) or {}
+            sqft_range = rental.get("sqftRange", {}) or {}
+            bedrooms = bed_range.get("min")
+            bathrooms = bath_range.get("min")
+            sqft = sqft_range.get("min")
 
-            lat = prop.get("latitude") or prop.get("lat")
-            lon = prop.get("longitude") or prop.get("lng") or prop.get("lon")
+            # Location — nested centroid
+            centroid_outer = addr_info.get("centroid", {}) or {}
+            centroid = centroid_outer.get("centroid", {}) or {}
+            lat = centroid.get("latitude")
+            lon = centroid.get("longitude")
 
-            url = prop.get("url") or prop.get("listingUrl") or ""
+            # URL — build from address if not provided
+            url = prop.get("url") or ""
             if url and not url.startswith("http"):
                 url = f"https://www.redfin.com{url}"
             if not url:
                 url = f"https://www.redfin.com/rentals"
 
-            image_url = prop.get("photo") or prop.get("primaryPhoto") or prop.get("imgSrc")
+            # Property name as title if available
+            prop_name = rental.get("propertyName", "")
+            title = prop_name if prop_name else address_str
 
-            title = address_str or f"Redfin Property {prop_id}"
+            image_url = prop.get("photo") or prop.get("primaryPhoto") or prop.get("imgSrc")
 
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=f"redfin_{prop_id}",
                 url=url,
                 title=title,
-                address=address_str or None,
+                address=address_str,
                 city=city or None,
                 state=state or "WA",
                 zip_code=str(zipcode)[:5] if zipcode else None,

@@ -145,87 +145,70 @@ class ZillowAPIScraper(BaseScraper):
             return None
 
     def _extract_properties(self, result: dict) -> list[dict]:
-        """Extract property list from a search result, handling various response shapes."""
+        """Extract property list from a search result.
+
+        The API returns: {"searchResults": [{"property": {...}}, ...]}
+        Each item wraps the actual data under a "property" key.
+        """
         if not isinstance(result, dict):
             return []
 
-        # Try common keys for the property list
-        for key in ("props", "properties", "listings", "homes", "results",
-                     "searchResults", "data", "mapResults", "listResults"):
-            val = result.get(key)
-            if isinstance(val, list):
-                return val
-            # Nested: {"searchResults": {"listResults": [...]}}
-            if isinstance(val, dict):
-                for subkey in ("listResults", "results", "properties", "props",
-                               "mapResults", "homes"):
-                    subval = val.get(subkey)
-                    if isinstance(subval, list):
-                        return subval
+        items = result.get("searchResults", [])
+        if not isinstance(items, list):
+            return []
 
-        return []
+        # Unwrap: each item has a "property" sub-dict with the actual data
+        properties = []
+        for item in items:
+            if isinstance(item, dict):
+                prop = item.get("property")
+                if isinstance(prop, dict):
+                    properties.append(prop)
+                else:
+                    # Fallback: item itself is the property
+                    properties.append(item)
+
+        if properties:
+            import json
+            print(f"[{self.source_name}] First item keys: {list(properties[0].keys())}")
+            print(f"[{self.source_name}] First item preview: {json.dumps(properties[0], default=str)[:1500]}")
+
+        return properties
 
     def _parse_property(self, prop: dict) -> Optional[ScrapedListing]:
-        """Parse a Zillow property object into a ScrapedListing."""
+        """Parse a Zillow property object into a ScrapedListing.
+
+        Expected structure (from API):
+          {
+            "zpid": 123,
+            "location": {"latitude": 47.05, "longitude": -122.82},
+            "address": {"streetAddress": "...", "city": "...", "state": "...", "zipcode": "..."},
+            "media": {"propertyPhotoLinks": {"highResolutionLink": "..."}},
+            "price": ..., "bedrooms": ..., "bathrooms": ..., "livingArea": ...,
+            "detailUrl": "..."
+          }
+        """
         try:
-            # Zillow uses zpid as unique ID
-            zpid = str(
-                prop.get("zpid")
-                or prop.get("id")
-                or prop.get("propertyId")
-                or prop.get("listingId")
-                or ""
-            )
+            zpid = str(prop.get("zpid") or prop.get("id") or "")
             if not zpid:
                 return None
 
-            # Address parsing - handle nested or flat formats
-            address_obj = prop.get("address", {})
-            if isinstance(address_obj, dict):
-                street = address_obj.get("streetAddress", "") or address_obj.get("line", "")
-                city = address_obj.get("city", "")
-                state = address_obj.get("state", "") or address_obj.get("stateOrProvince", "")
-                zipcode = address_obj.get("zipcode", "") or address_obj.get("postalCode", "") or address_obj.get("zip", "")
-            elif isinstance(address_obj, str):
-                street = address_obj
-                city = prop.get("city", "")
-                state = prop.get("state", "")
-                zipcode = prop.get("zipcode", "") or prop.get("zip", "")
-            else:
-                street = prop.get("streetAddress", "") or prop.get("address", "")
-                city = prop.get("city", "")
-                state = prop.get("state", "")
-                zipcode = prop.get("zipcode", "") or prop.get("zip", "")
+            # Address — nested under "address" dict
+            address_obj = prop.get("address", {}) or {}
+            street = address_obj.get("streetAddress", "")
+            city = address_obj.get("city", "")
+            state = address_obj.get("state", "")
+            zipcode = address_obj.get("zipcode", "")
 
-            # Also try top-level fields as fallbacks
-            if not street:
-                street = prop.get("streetAddress", "")
-            if not city:
-                city = prop.get("city", "")
-            if not state:
-                state = prop.get("state", "")
-            if not zipcode:
-                zipcode = prop.get("zipcode", "") or prop.get("zip", "")
-
-            # Build full address
             if street and city:
                 address_str = f"{street}, {city}, {state} {zipcode}".strip()
             elif street:
                 address_str = street
             else:
-                address_str = ""
-
-            if not address_str:
                 return None
 
             # Rent/price
-            rent = (
-                prop.get("price")
-                or prop.get("rent")
-                or prop.get("listPrice")
-                or prop.get("rentZestimate")
-                or prop.get("unformattedPrice")
-            )
+            rent = prop.get("price") or prop.get("rentZestimate") or prop.get("unformattedPrice")
             if isinstance(rent, str):
                 rent = self.parse_rent(rent)
             elif isinstance(rent, (int, float)):
@@ -235,30 +218,34 @@ class ZillowAPIScraper(BaseScraper):
             bathrooms = prop.get("bathrooms") or prop.get("baths")
             sqft = prop.get("livingArea") or prop.get("sqft") or prop.get("area")
 
-            lat = prop.get("latitude") or prop.get("lat")
-            lon = prop.get("longitude") or prop.get("lng") or prop.get("lon")
-            # Handle nested latLong
-            if not lat and isinstance(prop.get("latLong"), dict):
-                lat = prop["latLong"].get("latitude") or prop["latLong"].get("lat")
-                lon = prop["latLong"].get("longitude") or prop["latLong"].get("lng")
+            # Location — nested under "location" dict
+            loc = prop.get("location", {}) or {}
+            lat = loc.get("latitude") or prop.get("latitude")
+            lon = loc.get("longitude") or prop.get("longitude")
 
-            # URL - get the actual listing URL
-            detail_url = prop.get("detailUrl") or prop.get("url") or prop.get("listingUrl") or ""
+            # URL
+            detail_url = prop.get("detailUrl") or prop.get("url") or ""
             if detail_url and not detail_url.startswith("http"):
                 detail_url = f"https://www.zillow.com{detail_url}"
             if not detail_url:
                 detail_url = f"https://www.zillow.com/homedetails/{zpid}_zpid/"
 
-            image_url = prop.get("imgSrc") or prop.get("image") or prop.get("photo") or ""
-
-            title = address_str or f"Zillow Property {zpid}"
+            # Image — nested under "media.propertyPhotoLinks"
+            media = prop.get("media", {}) or {}
+            photo_links = media.get("propertyPhotoLinks", {}) or {}
+            image_url = (
+                photo_links.get("highResolutionLink")
+                or photo_links.get("mediumSizeLink")
+                or prop.get("imgSrc")
+                or ""
+            )
 
             return ScrapedListing(
                 source_name=self.source_name,
                 source_id=f"zillow_{zpid}",
                 url=detail_url,
-                title=title,
-                address=address_str or None,
+                title=address_str,
+                address=address_str,
                 city=city or None,
                 state=state or "WA",
                 zip_code=str(zipcode)[:5] if zipcode else None,
