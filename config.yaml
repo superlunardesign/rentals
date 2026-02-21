@@ -186,7 +186,7 @@ sources:
   # prevent re-adding properties removed from PM sites.
   - name: "Zillow Rentals"
     scraper: "zillow_api"
-    url: "zillow://47.12,-123.05,46.93,-122.72"
+    url: "zillow://47.193421,-123.155492,46.822567,-122.776118"
     enabled: true
 
   - name: "Redfin Olympia Rentals"
