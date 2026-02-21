@@ -18,7 +18,8 @@ class ZillowAPIScraper(BaseScraper):
     Example: "zillow://Olympia, WA" or "zillow://98512"
     """
 
-    RAPIDAPI_HOST = "zillow-com1.p.rapidapi.com"
+    # zillow-com1 was deprecated Dec 2025, successor is us-housing-market-data1
+    RAPIDAPI_HOST = "us-housing-market-data1.p.rapidapi.com"
     SEARCH_URL = f"https://{RAPIDAPI_HOST}/propertyExtendedSearch"
 
     def __init__(self, url: str = "zillow://Olympia, WA"):
