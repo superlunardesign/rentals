@@ -1,4 +1,4 @@
-"""Zillow API scraper using RapidAPI zillow-real-estate-api endpoint."""
+"""Zillow API scraper using RapidAPI private-zillow endpoint (map bounds search)."""
 
 import os
 import re
@@ -12,24 +12,32 @@ from .base import BaseScraper, ScrapedListing
 class ZillowAPIScraper(BaseScraper):
     """Scraper that fetches rental listings from Zillow via RapidAPI.
 
-    Uses the zillow-real-estate-api /v1/search endpoint (GET).
+    Uses the private-zillow /search/bymapbounds endpoint (GET).
     Requires RAPIDAPI_KEY environment variable.
 
-    Config url format: "zillow://location" where location is a city/state or zip.
-    Example: "zillow://Olympia, WA" or "zillow://98512"
-
-    Multiple locations can be pipe-separated:
-    "zillow://Olympia, WA|Tumwater, WA|Lacey, WA"
+    Config url format: "zillow://northLat,westLng,southLat,eastLng"
+    Example: "zillow://47.12,-123.05,46.93,-122.72"
     """
 
-    RAPIDAPI_HOST = "zillow-real-estate-api.p.rapidapi.com"
-    SEARCH_URL = f"https://{RAPIDAPI_HOST}/v1/search"
+    RAPIDAPI_HOST = "private-zillow.p.rapidapi.com"
+    SEARCH_URL = f"https://{RAPIDAPI_HOST}/search/bymapbounds"
 
-    def __init__(self, url: str = "zillow://Olympia, WA"):
+    def __init__(self, url: str = "zillow://47.12,-123.05,46.93,-122.72"):
         raw = url.replace("zillow://", "").strip()
         super().__init__(source_name="zillow_api", base_url=url)
-        # Support multiple locations separated by |
-        self.locations = [loc.strip() for loc in raw.split("|") if loc.strip()]
+        # Parse bounds: north,west,south,east
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) == 4:
+            self.north_lat = parts[0]
+            self.west_lng = parts[1]
+            self.south_lat = parts[2]
+            self.east_lng = parts[3]
+        else:
+            # Fallback: Olympia/Tumwater/Lacey area
+            self.north_lat = "47.12"
+            self.west_lng = "-123.05"
+            self.south_lat = "46.93"
+            self.east_lng = "-122.72"
         self.api_key = os.environ.get("RAPIDAPI_KEY", "")
 
     def scrape(self) -> list[ScrapedListing]:
@@ -46,17 +54,12 @@ class ZillowAPIScraper(BaseScraper):
             if not results:
                 return []
 
-            # Response may be a list of search results (one per location)
-            # or a single result dict
-            search_results = results if isinstance(results, list) else [results]
-
-            for result in search_results:
-                props = self._extract_properties(result)
-                for prop in props:
-                    listing = self._parse_property(prop)
-                    if listing and listing.source_id not in seen_ids:
-                        seen_ids.add(listing.source_id)
-                        listings.append(listing)
+            props = self._extract_properties(results)
+            for prop in props:
+                listing = self._parse_property(prop)
+                if listing and listing.source_id not in seen_ids:
+                    seen_ids.add(listing.source_id)
+                    listings.append(listing)
 
         except Exception as e:
             print(f"[{self.source_name}] Error: {e}")
@@ -66,45 +69,54 @@ class ZillowAPIScraper(BaseScraper):
         print(f"[{self.source_name}] Found {len(listings)} listings from Zillow API")
         return listings
 
-    def _fetch_results(self) -> Optional[list]:
-        """Fetch rental results using individual GET /v1/search per location."""
+    def _fetch_results(self) -> Optional[dict]:
+        """Fetch rental results using GET /search/bymapbounds."""
         headers = {
             "X-RapidAPI-Key": self.api_key,
             "X-RapidAPI-Host": self.RAPIDAPI_HOST,
+            "Accept": "application/json",
         }
 
-        all_results = []
-        for location in self.locations:
-            params = {
-                "location": location,
-                "status": "for_rent",
-                "result_type": "list",
-                "page_size": 40,
-                "sort": "relevance",
-                "page": 1,
-            }
+        params = {
+            "northLatitude": self.north_lat,
+            "southLatitude": self.south_lat,
+            "eastLongitude": self.east_lng,
+            "westLongitude": self.west_lng,
+            "page": "1",
+            "sortOrder": "Newest",
+            "listingStatus": "For_Rent",
+            "price_min": "2000",
+            "price_max": "3000",
+            "bed_min": "No_Min",
+            "bed_max": "No_Max",
+            "bathrooms": "Any",
+            "homeType": "Houses, Townhomes, Multi-family, Condos/Co-ops, Apartments",
+            "parkingSpots": "Any",
+            "daysOnZillow": "Any",
+        }
 
-            try:
-                response = self.client.get(
-                    self.SEARCH_URL,
-                    headers=headers,
-                    params=params,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+        try:
+            response = self.client.get(
+                self.SEARCH_URL,
+                headers=headers,
+                params=params,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
 
-                if isinstance(data, dict):
-                    all_results.append(data)
-                elif isinstance(data, list):
-                    all_results.extend(data)
+            if isinstance(data, dict):
+                return data
+            elif isinstance(data, list):
+                return {"results": data}
+            return None
 
-            except httpx.HTTPStatusError as e:
-                print(f"[{self.source_name}] API error for {location}: {e.response.status_code} - {e.response.text[:200]}")
-            except Exception as e:
-                print(f"[{self.source_name}] Request error for {location}: {e}")
-
-        return all_results if all_results else None
+        except httpx.HTTPStatusError as e:
+            print(f"[{self.source_name}] API error: {e.response.status_code} - {e.response.text[:500]}")
+            return None
+        except Exception as e:
+            print(f"[{self.source_name}] Request error: {e}")
+            return None
 
     def _extract_properties(self, result: dict) -> list[dict]:
         """Extract property list from a search result, handling various response shapes."""
@@ -112,13 +124,15 @@ class ZillowAPIScraper(BaseScraper):
             return []
 
         # Try common keys for the property list
-        for key in ("props", "properties", "listings", "homes", "results", "searchResults", "data"):
+        for key in ("props", "properties", "listings", "homes", "results",
+                     "searchResults", "data", "mapResults", "listResults"):
             val = result.get(key)
             if isinstance(val, list):
                 return val
             # Nested: {"searchResults": {"listResults": [...]}}
             if isinstance(val, dict):
-                for subkey in ("listResults", "results", "properties", "props"):
+                for subkey in ("listResults", "results", "properties", "props",
+                               "mapResults", "homes"):
                     subval = val.get(subkey)
                     if isinstance(subval, list):
                         return subval
@@ -202,7 +216,7 @@ class ZillowAPIScraper(BaseScraper):
                 lat = prop["latLong"].get("latitude") or prop["latLong"].get("lat")
                 lon = prop["latLong"].get("longitude") or prop["latLong"].get("lng")
 
-            # URL
+            # URL - get the actual listing URL
             detail_url = prop.get("detailUrl") or prop.get("url") or prop.get("listingUrl") or ""
             if detail_url and not detail_url.startswith("http"):
                 detail_url = f"https://www.zillow.com{detail_url}"
