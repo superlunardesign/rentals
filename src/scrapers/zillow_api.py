@@ -70,41 +70,47 @@ class ZillowAPIScraper(BaseScraper):
         return listings
 
     def _fetch_results(self) -> Optional[dict]:
-        """Fetch rental results using GET /search/bymapbounds."""
+        """Fetch rental results using GET /search/bymapbounds.
+
+        Builds the query string directly in the URL (pre-encoded) to match
+        the exact format RapidAPI expects, avoiding httpx param re-encoding
+        issues with special chars like colons, commas, and slashes.
+        """
         headers = {
-            "X-RapidAPI-Key": self.api_key,
-            "X-RapidAPI-Host": self.RAPIDAPI_HOST,
-            "Accept": "application/json",
+            "x-rapidapi-key": self.api_key,
+            "x-rapidapi-host": self.RAPIDAPI_HOST,
         }
 
-        params = {
-            "northLatitude": self.north_lat,
-            "southLatitude": self.south_lat,
-            "eastLongitude": self.east_lng,
-            "westLongitude": self.west_lng,
-            "page": "1",
-            "sortOrder": "Newest",
-            "listingStatus": "For_Rent",
-            "listPriceRange": "min:2000, max:3000",
-            "bed_min": "2",
-            "bed_max": "No_Max",
-            "bathrooms": "TwoPlus",
-            "homeType": "Houses, Townhomes, Multi-family, Condos/Co-ops, Lots-Land, Apartments, Manufactured",
-            "space": "Entire Place",
-            "maxHOA": "Any",
-            "parkingSpots": "Any",
-            "squareFeetRange": "min:1200",
-            "mustHaveBasement": "No",
-            "hide55plusComm": "true",
-            "daysOnZillow": "Any",
-            "soldInLast": "Any",
-        }
+        # Build URL with pre-encoded query string (matches RapidAPI's code snippet)
+        from urllib.parse import quote
+        url = (
+            f"https://{self.RAPIDAPI_HOST}/search/bymapbounds"
+            f"?eastLongitude={self.east_lng}"
+            f"&northLatitude={self.north_lat}"
+            f"&southLatitude={self.south_lat}"
+            f"&westLongitude={self.west_lng}"
+            f"&page=1"
+            f"&sortOrder=Newest"
+            f"&listingStatus=For_Rent"
+            f"&listPriceRange={quote('min:2000, max:3000')}"
+            f"&bed_min=2"
+            f"&bed_max=No_Max"
+            f"&bathrooms=TwoPlus"
+            f"&homeType={quote('Houses, Townhomes, Multi-family, Condos/Co-ops, Lots-Land, Apartments, Manufactured')}"
+            f"&space={quote('Entire Place')}"
+            f"&maxHOA=Any"
+            f"&parkingSpots=Any"
+            f"&squareFeetRange={quote('min:1200')}"
+            f"&mustHaveBasement=No"
+            f"&hide55plusComm=true"
+            f"&daysOnZillow=Any"
+            f"&soldInLast=Any"
+        )
 
         try:
             response = self.client.get(
-                self.SEARCH_URL,
+                url,
                 headers=headers,
-                params=params,
                 timeout=30.0,
             )
             response.raise_for_status()
