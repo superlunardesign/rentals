@@ -98,7 +98,8 @@ class ScraperService:
                             listings,
                             scraper=scraper,
                             source_name=scraper.source_name,
-                            remove_stale=False
+                            remove_stale=False,
+                            suppress_notifications=self._is_first_import(scraper.source_name),
                         )
 
                     # Accumulate found IDs for this source_name
@@ -142,6 +143,17 @@ class ScraperService:
 
     # Sources that aggregate from other sites (slow to delist)
     AGGREGATOR_SOURCES = {"zillow_api", "redfin_api"}
+
+    def _is_first_import(self, source_name: str) -> bool:
+        """Check if this is the first import for a source (no existing listings)."""
+        with SessionLocal() as session:
+            count = session.query(Listing).filter(
+                Listing.source_name == source_name,
+            ).count()
+            if count == 0:
+                print(f"[scraper] First import for {source_name} — suppressing notifications")
+                return True
+        return False
 
     def _remove_stale_listings(self, all_found_ids_by_source: dict[str, set]) -> int:
         """Mark listings not found in the latest scrape as inactive (soft delete).
@@ -208,7 +220,7 @@ class ScraperService:
             print(f"[scraper] Error saving listing: {e}")
             return None
 
-    def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None, source_name: str = None, remove_stale: bool = True) -> dict:
+    def _process_listings(self, scraped_listings: list[ScrapedListing], scraper=None, source_name: str = None, remove_stale: bool = True, suppress_notifications: bool = False) -> dict:
         """Process scraped listings and update database.
 
         If scraper is provided and listing is missing key data, will fetch detail page.
@@ -276,7 +288,8 @@ class ScraperService:
                     session.add(listing)
                     results["new"] += 1
                     # Track for notifications (will be sent after commit)
-                    results["new_listing_objects"].append(listing)
+                    if not suppress_notifications:
+                        results["new_listing_objects"].append(listing)
 
             session.commit()
 

@@ -16,6 +16,12 @@ _SUFFIX_MAP = {
     "loop": "loop", "trail": "trl", "terrace": "ter",
 }
 
+# Directional normalization map
+_DIRECTIONAL_MAP = {
+    "north": "n", "south": "s", "east": "e", "west": "w",
+    "northeast": "ne", "northwest": "nw", "southeast": "se", "southwest": "sw",
+}
+
 
 def normalize_address(address: str) -> str:
     """Normalize an address for cross-source duplicate matching.
@@ -48,9 +54,12 @@ def normalize_address(address: str) -> str:
     parts = [p.strip() for p in text.split(',')]
     parts = [p for p in parts if p]
 
-    # Normalize street suffixes in the street part (first part)
+    # Normalize street suffixes and directionals in the street part (first part)
     if parts:
         street = parts[0]
+        # Normalize directionals first (longer words before shorter to avoid partial matches)
+        for full, abbr in _DIRECTIONAL_MAP.items():
+            street = re.sub(r'\b' + full + r'\.?\b', abbr, street)
         for full, abbr in _SUFFIX_MAP.items():
             street = re.sub(r'\b' + full + r'\.?\b', abbr, street)
             # Also normalize existing abbreviations with periods (e.g., "st." -> "st")
@@ -78,12 +87,10 @@ def find_cross_source_duplicate(
     """Find an existing listing from a DIFFERENT source at the same address.
 
     Uses normalized address matching. Optionally validates with rent proximity
-    (within 10%) to avoid false positives on multi-unit buildings.
+    (within 15%) to avoid false positives on multi-unit buildings.
 
     For aggregator sources (Zillow, Redfin), also checks recently-inactive
     listings to prevent re-adding properties that were removed from PM sites.
-    Aggregators are slow to delist, so a listing removed by a PM should not
-    reappear via Zillow/Redfin.
     """
     if not address:
         return None
@@ -112,13 +119,18 @@ def find_cross_source_duplicate(
         if not candidate_normalized:
             continue
 
+        # Check if street number + street name match (extract first part before city)
         if candidate_normalized == normalized:
             # Exact normalized match - check rent proximity if both have rent
             if rent and candidate.rent:
-                # Allow 15% variance for same property (different listing dates, etc.)
                 diff = abs(rent - candidate.rent) / max(rent, candidate.rent)
                 if diff > 0.15:
                     continue  # Probably different units at same address
+            print(f"[dedup] Match: '{address[:40]}' == '{candidate.address[:40]}' (from {candidate.source_name})")
             return candidate
+
+    # Log first few non-matches for debugging (only for aggregators on first check)
+    if source_name in AGGREGATOR_SOURCES and candidates:
+        print(f"[dedup] No match for '{normalized}' among {len(candidates)} candidates")
 
     return None
