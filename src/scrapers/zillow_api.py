@@ -109,6 +109,18 @@ class ZillowAPIScraper(BaseScraper):
             )
             response.raise_for_status()
             data = response.json()
+            # Debug: show response structure
+            if isinstance(data, dict):
+                print(f"[{self.source_name}] Response keys: {list(data.keys())}")
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        print(f"[{self.source_name}]   {k}: list with {len(v)} items")
+                    elif isinstance(v, dict):
+                        print(f"[{self.source_name}]   {k}: dict with keys {list(v.keys())[:10]}")
+                    else:
+                        print(f"[{self.source_name}]   {k}: {str(v)[:200]}")
+            else:
+                print(f"[{self.source_name}] Response type: {type(data).__name__}, preview: {str(data)[:300]}")
 
             if isinstance(data, dict):
                 return data
@@ -119,8 +131,11 @@ class ZillowAPIScraper(BaseScraper):
         except httpx.HTTPStatusError as e:
             print(f"[{self.source_name}] API error: {e.response.status_code} - {e.response.text[:500]}")
             return None
+        except httpx.ConnectError as e:
+            print(f"[{self.source_name}] Connection error: {e}")
+            return None
         except Exception as e:
-            print(f"[{self.source_name}] Request error: {e}")
+            print(f"[{self.source_name}] Request error: {type(e).__name__}: {e}")
             return None
 
     def _extract_properties(self, result: dict) -> list[dict]:
