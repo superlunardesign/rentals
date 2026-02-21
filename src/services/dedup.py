@@ -65,6 +65,10 @@ def normalize_address(address: str) -> str:
     return result
 
 
+# Sources that aggregate from other sites (slow to delist)
+AGGREGATOR_SOURCES = {"zillow_api", "redfin_api"}
+
+
 def find_cross_source_duplicate(
     session: Session,
     address: str,
@@ -75,6 +79,11 @@ def find_cross_source_duplicate(
 
     Uses normalized address matching. Optionally validates with rent proximity
     (within 10%) to avoid false positives on multi-unit buildings.
+
+    For aggregator sources (Zillow, Redfin), also checks recently-inactive
+    listings to prevent re-adding properties that were removed from PM sites.
+    Aggregators are slow to delist, so a listing removed by a PM should not
+    reappear via Zillow/Redfin.
     """
     if not address:
         return None
@@ -83,12 +92,20 @@ def find_cross_source_duplicate(
     if not normalized or len(normalized) < 8:
         return None
 
-    # Query active listings from other sources that have addresses
-    candidates = session.query(Listing).filter(
-        Listing.source_name != source_name,
-        Listing.is_active == True,
-        Listing.address.isnot(None),
-    ).all()
+    # For aggregator sources, also check inactive listings to prevent
+    # re-adding properties that were removed from their original PM source
+    if source_name in AGGREGATOR_SOURCES:
+        candidates = session.query(Listing).filter(
+            Listing.source_name != source_name,
+            Listing.address.isnot(None),
+        ).all()
+    else:
+        # PM sources only check against active listings
+        candidates = session.query(Listing).filter(
+            Listing.source_name != source_name,
+            Listing.is_active == True,
+            Listing.address.isnot(None),
+        ).all()
 
     for candidate in candidates:
         candidate_normalized = normalize_address(candidate.address or "")
@@ -98,7 +115,7 @@ def find_cross_source_duplicate(
         if candidate_normalized == normalized:
             # Exact normalized match - check rent proximity if both have rent
             if rent and candidate.rent:
-                # Allow 10% variance for same property (different listing dates, etc.)
+                # Allow 15% variance for same property (different listing dates, etc.)
                 diff = abs(rent - candidate.rent) / max(rent, candidate.rent)
                 if diff > 0.15:
                     continue  # Probably different units at same address

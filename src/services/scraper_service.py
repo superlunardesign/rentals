@@ -140,24 +140,33 @@ class ScraperService:
 
         return results
 
+    # Sources that aggregate from other sites (slow to delist)
+    AGGREGATOR_SOURCES = {"zillow_api", "redfin_api"}
+
     def _remove_stale_listings(self, all_found_ids_by_source: dict[str, set]) -> int:
-        """Remove listings that weren't found in the latest scrape."""
+        """Mark listings not found in the latest scrape as inactive (soft delete).
+
+        Soft-deleting instead of hard-deleting prevents aggregator sources
+        (Zillow, Redfin) from re-adding listings that were removed from
+        their original PM source.
+        """
         removed = 0
 
         with SessionLocal() as session:
             for source_name, found_ids in all_found_ids_by_source.items():
                 if not found_ids:
-                    # Don't delete anything if scraper found nothing
+                    # Don't deactivate anything if scraper found nothing
                     continue
 
                 stale_listings = session.query(Listing).filter(
                     Listing.source_name == source_name,
+                    Listing.is_active == True,
                     ~Listing.source_id.in_(found_ids)
                 ).all()
 
                 for stale in stale_listings:
-                    print(f"[scraper] Removing stale listing: {stale.title}")
-                    session.delete(stale)
+                    print(f"[scraper] Marking inactive: {stale.title}")
+                    stale.is_active = False
                     removed += 1
 
             session.commit()
