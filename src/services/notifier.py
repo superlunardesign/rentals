@@ -223,7 +223,9 @@ class TelegramNotifier:
                         print(f"[telegram] URL failed, trying download and upload...")
                         return self._download_and_send_photo(photo_url, caption)
 
-                    return False
+                    # Fall back to text-only for any other photo error
+                    print(f"[telegram] Photo failed, falling back to text-only")
+                    return self._send_message(caption)
 
         except Exception as e:
             print(f"[telegram] Photo request error: {e}")

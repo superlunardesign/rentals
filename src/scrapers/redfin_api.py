@@ -209,9 +209,16 @@ class RedfinAPIScraper(BaseScraper):
             prop_name = rental.get("propertyName", "")
             title = prop_name if prop_name else address_str
 
-            # Note: staticMapUrl is a Google Maps image, not a property photo.
-            # photosInfo has ranges but no direct URLs. Skip image for now.
+            # Construct photo URL from Redfin CDN
+            # Rental pattern: https://ssl.cdn-redfin.com/photo/rent/{rentalId}/bigphoto/{position}_{version}.jpg
             image_url = ""
+            rental_id = rental.get("rentalId", "")
+            photo_ranges = (home_data.get("photosInfo", {}) or {}).get("photoRanges", [])
+            if rental_id and photo_ranges:
+                first_range = photo_ranges[0]
+                pos = first_range.get("startPos", 0)
+                version = first_range.get("version", "0")
+                image_url = f"https://ssl.cdn-redfin.com/photo/rent/{rental_id}/bigphoto/{pos}_{version}.jpg"
 
             return ScrapedListing(
                 source_name=self.source_name,
