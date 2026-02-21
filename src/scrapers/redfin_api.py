@@ -14,17 +14,16 @@ class RedfinAPIScraper(BaseScraper):
 
     Requires RAPIDAPI_KEY environment variable.
 
-    Config url format: "redfin://<regionId>" where regionId is Redfin's
-    region identifier (e.g. "6_13223" for Olympia, WA).
+    Config url format: "redfin://<location>" where location is a city/state
+    string (e.g. "Olympia, WA, USA").
     """
 
     RAPIDAPI_HOST = "realfin-us.p.rapidapi.com"
-    SEARCH_URL = f"https://{RAPIDAPI_HOST}/search/region/for-rent"
 
-    def __init__(self, url: str = "redfin://6_13223"):
-        region_id = url.replace("redfin://", "").strip()
+    def __init__(self, url: str = "redfin://Olympia, WA, USA"):
+        location = url.replace("redfin://", "").strip()
         super().__init__(source_name="redfin_api", base_url=url)
-        self.region_id = region_id
+        self.location = location
         self.api_key = os.environ.get("RAPIDAPI_KEY", "")
 
     def scrape(self) -> list[ScrapedListing]:
@@ -58,20 +57,34 @@ class RedfinAPIScraper(BaseScraper):
         return listings
 
     def _fetch_results(self) -> Optional[dict]:
-        """Fetch rental results from the Redfin API."""
+        """Fetch rental results from the Redfin API.
+
+        Uses /search/location/for-rent with pre-encoded URL to match
+        RapidAPI's exact format.
+        """
         headers = {
-            "X-RapidAPI-Key": self.api_key,
-            "X-RapidAPI-Host": self.RAPIDAPI_HOST,
+            "x-rapidapi-key": self.api_key,
+            "x-rapidapi-host": self.RAPIDAPI_HOST,
         }
-        params = {
-            "regionId": self.region_id,
-        }
+
+        from urllib.parse import quote
+        url = (
+            f"https://{self.RAPIDAPI_HOST}/search/location/for-rent"
+            f"?location={quote(self.location)}"
+            f"&sort=days-on-redfin-asc"
+            f"&minPrice=2000"
+            f"&maxPrice=3000"
+            f"&numBeds=2"
+            f"&numBaths=2"
+            f"&homeType={quote('1,2,3')}"
+            f"&minSquareFeet=1000"
+            f"&booleanFilters=excl_ar"
+        )
 
         try:
             response = self.client.get(
-                self.SEARCH_URL,
+                url,
                 headers=headers,
-                params=params,
                 timeout=30.0,
             )
             response.raise_for_status()

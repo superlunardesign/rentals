@@ -191,17 +191,17 @@ sources:
 
   - name: "Redfin Olympia Rentals"
     scraper: "redfin_api"
-    url: "redfin://6_13223"
+    url: "redfin://Olympia, WA, USA"
     enabled: true
 
   - name: "Redfin Tumwater Rentals"
     scraper: "redfin_api"
-    url: "redfin://6_18589"
+    url: "redfin://Tumwater, WA, USA"
     enabled: true
 
   - name: "Redfin Lacey Rentals"
     scraper: "redfin_api"
-    url: "redfin://6_9353"
+    url: "redfin://Lacey, WA, USA"
     enabled: true
 
 # Scheduler settings
