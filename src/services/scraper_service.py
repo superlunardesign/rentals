@@ -300,8 +300,12 @@ class ScraperService:
                 scraped.latitude, scraped.longitude
             )
         elif scraped.address:
-            full_addr = f"{scraped.address}, {scraped.city or ''}, {scraped.state or 'WA'}"
-            coords = self.geocoder.geocode_address(full_addr)
+            coords = self.geocoder.geocode_with_fallback(
+                scraped.address,
+                city=scraped.city,
+                state=scraped.state or "WA",
+                zip_code=scraped.zip_code,
+            )
             if coords:
                 listing.latitude = coords[0]
                 listing.longitude = coords[1]

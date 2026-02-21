@@ -186,16 +186,27 @@ class SimplyHomeScraper(BrowserScraper):
                 if image_url and image_url.startswith('/'):
                     image_url = f"https://www.simplyhomerealty.com{image_url}"
 
-            # Parse city/state/zip from address
+            # Parse city/state/zip from address (format: "Street, City, ST ZIP")
             city, state, zip_code = None, None, None
             if address:
                 zip_match = re.search(r'(\d{5})(?:-\d{4})?', address)
                 if zip_match:
                     zip_code = zip_match.group(1)
 
-                city_match = re.search(r'(Tumwater|Olympia|Lacey|Yelm|Rochester|Tenino|Centralia|Chehalis|Rainier|Shelton|Roy|Tacoma)', address, re.I)
-                if city_match:
-                    city = city_match.group(1).title()
+                # Parse "City, ST" or "City, ST ZIP" from the address parts
+                parts = [p.strip() for p in address.split(',')]
+                if len(parts) >= 2:
+                    # Last part usually contains "WA 98503" or just "WA"
+                    last_part = parts[-1].strip()
+                    state_match = re.match(r'([A-Z]{2})\s*(\d{5})?', last_part)
+                    if state_match:
+                        state = state_match.group(1)
+                        city = parts[-2].strip() if len(parts) >= 2 else None
+                    else:
+                        # Maybe city is in the last part with no state
+                        city = last_part if last_part and not re.match(r'^\d', last_part) else None
+
+                if not state:
                     state = "WA"
 
             # Generate stable source ID based on address (don't include index which changes with order)
