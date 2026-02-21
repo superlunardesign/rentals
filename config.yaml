@@ -159,6 +159,37 @@ sources:
     url: "https://utopiamanagement.com/rental-list/tacoma-wa"
     enabled: true
 
+  # --- API-based sources (requires RAPIDAPI_KEY env var) ---
+  - name: "Zillow Olympia Rentals"
+    scraper: "zillow_api"
+    url: "zillow://Olympia, WA"
+    enabled: true
+
+  - name: "Zillow Tumwater Rentals"
+    scraper: "zillow_api"
+    url: "zillow://Tumwater, WA"
+    enabled: true
+
+  - name: "Zillow Lacey Rentals"
+    scraper: "zillow_api"
+    url: "zillow://Lacey, WA"
+    enabled: true
+
+  - name: "Redfin Olympia Rentals"
+    scraper: "redfin_api"
+    url: "redfin://Olympia, WA"
+    enabled: true
+
+  - name: "Redfin Tumwater Rentals"
+    scraper: "redfin_api"
+    url: "redfin://Tumwater, WA"
+    enabled: true
+
+  - name: "Redfin Lacey Rentals"
+    scraper: "redfin_api"
+    url: "redfin://Lacey, WA"
+    enabled: true
+
   # --- Slow browser-based scrapers (run last) ---
   - name: "Vanguard Realty"
     scraper: "vanguardrealty"

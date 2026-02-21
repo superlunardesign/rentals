@@ -13,6 +13,7 @@ from ..scrapers.base import ScrapedListing
 from .matcher import MatchingService
 from .geocoder import GeocodingService
 from .notifier import NotificationService
+from .dedup import find_cross_source_duplicate
 
 
 class ScraperService:
@@ -178,12 +179,21 @@ class ScraperService:
                         # Notify about price drop
                         self.notifier.notify_price_drop(price_drop)
                     return {"source_id": source_id, "is_new": False, "listing": None, "price_drop": price_drop}
-                else:
-                    listing = self._create_listing(scraped)
-                    session.add(listing)
-                    session.commit()
-                    session.refresh(listing)
-                    return {"source_id": source_id, "is_new": True, "listing": listing}
+
+                # Check for cross-source duplicate
+                dupe = find_cross_source_duplicate(
+                    session, scraped.address, scraped.source_name, scraped.rent
+                )
+                if dupe:
+                    short = (scraped.address or scraped.title or "")[:40]
+                    print(f"[scraper] Skipping duplicate: {short} (already from {dupe.source_name})")
+                    return {"source_id": source_id, "is_new": False, "listing": None}
+
+                listing = self._create_listing(scraped)
+                session.add(listing)
+                session.commit()
+                session.refresh(listing)
+                return {"source_id": source_id, "is_new": True, "listing": listing}
 
         except Exception as e:
             print(f"[scraper] Error saving listing: {e}")
@@ -242,6 +252,16 @@ class ScraperService:
                             results["price_drops"] = []
                         results["price_drops"].append(price_drop)
                 else:
+                    # Check for cross-source duplicate (same address from different source)
+                    dupe = find_cross_source_duplicate(
+                        session, scraped.address, scraped.source_name, scraped.rent
+                    )
+                    if dupe:
+                        short = (scraped.address or scraped.title or "")[:40]
+                        print(f"[scraper] Skipping duplicate: {short} (already from {dupe.source_name})")
+                        results["updated"] += 1
+                        continue
+
                     # Create new listing
                     listing = self._create_listing(scraped)
                     session.add(listing)

@@ -20,6 +20,8 @@ from .welcomehomerentals import WelcomeHomeRentalsScraper
 from .vanguardrealty import VanguardRealtyScraper
 from .elitesheltonrentals import EliteSheltonRentalsScraper
 from .utopiamanagement import UtopiaManagementScraper
+from .zillow_api import ZillowAPIScraper
+from .redfin_api import RedfinAPIScraper
 
 SCRAPERS = {
     "olyrents": OlyrentsScraper,
@@ -43,6 +45,8 @@ SCRAPERS = {
     "vanguardrealty": VanguardRealtyScraper,
     "elitesheltonrentals": EliteSheltonRentalsScraper,
     "utopiamanagement": UtopiaManagementScraper,
+    "zillow_api": ZillowAPIScraper,
+    "redfin_api": RedfinAPIScraper,
 }
 
 __all__ = [
@@ -69,5 +73,7 @@ __all__ = [
     "VanguardRealtyScraper",
     "EliteSheltonRentalsScraper",
     "UtopiaManagementScraper",
+    "ZillowAPIScraper",
+    "RedfinAPIScraper",
     "SCRAPERS",
 ]
