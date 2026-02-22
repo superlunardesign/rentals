@@ -78,6 +78,47 @@ def normalize_address(address: str) -> str:
 AGGREGATOR_SOURCES = {"zillow_api", "redfin_api"}
 
 
+def _extract_street_parts(normalized: str) -> tuple[str, str]:
+    """Extract street number and street name from a normalized address.
+
+    Returns (street_number, street_rest) where street_rest is everything
+    after the number. Used for fuzzy matching when full address differs
+    (e.g. one has city, other doesn't).
+    """
+    match = re.match(r'^(\d+)\s+(.+)', normalized)
+    if match:
+        return match.group(1), match.group(2)
+    return "", normalized
+
+
+def _addresses_match(normalized_a: str, normalized_b: str) -> bool:
+    """Check if two normalized addresses refer to the same property.
+
+    Handles cases where one address includes city and the other doesn't:
+      "8915 52nd ave se" vs "8915 52nd ave se olympia" -> match
+    """
+    if normalized_a == normalized_b:
+        return True
+
+    # Try street-number + street-name prefix matching
+    num_a, rest_a = _extract_street_parts(normalized_a)
+    num_b, rest_b = _extract_street_parts(normalized_b)
+
+    if not num_a or not num_b or num_a != num_b:
+        return False
+
+    # Same street number — check if street names match
+    # The shorter one should be a prefix of the longer one
+    # (handles "main st" vs "main st olympia")
+    shorter = min(rest_a, rest_b, key=len)
+    longer = max(rest_a, rest_b, key=len)
+
+    if len(shorter) < 5:
+        return False  # Too short to be reliable
+
+    return longer.startswith(shorter)
+
+
 def find_cross_source_duplicate(
     session: Session,
     address: str,
@@ -86,8 +127,11 @@ def find_cross_source_duplicate(
 ) -> Optional[Listing]:
     """Find an existing listing from a DIFFERENT source at the same address.
 
-    Uses normalized address matching. Optionally validates with rent proximity
-    (within 15%) to avoid false positives on multi-unit buildings.
+    Uses normalized address matching with street-level fuzzy matching to handle
+    differences in city/state inclusion across sources.
+
+    Optionally validates with rent proximity (within 15%) to avoid false
+    positives on multi-unit buildings.
 
     For aggregator sources (Zillow, Redfin), also checks recently-inactive
     listings to prevent re-adding properties that were removed from PM sites.
@@ -119,9 +163,8 @@ def find_cross_source_duplicate(
         if not candidate_normalized:
             continue
 
-        # Check if street number + street name match (extract first part before city)
-        if candidate_normalized == normalized:
-            # Exact normalized match - check rent proximity if both have rent
+        if _addresses_match(normalized, candidate_normalized):
+            # Check rent proximity if both have rent
             if rent and candidate.rent:
                 diff = abs(rent - candidate.rent) / max(rent, candidate.rent)
                 if diff > 0.15:
