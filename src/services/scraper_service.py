@@ -285,13 +285,6 @@ class ScraperService:
 
                     # Create new listing
                     listing = self._create_listing(scraped)
-
-                    # For aggregator first imports, seed as inactive (baseline).
-                    # Only truly NEW aggregator listings (found on subsequent runs)
-                    # should appear on the dashboard and trigger notifications.
-                    if suppress_notifications and scraped.source_name in self.AGGREGATOR_SOURCES:
-                        listing.is_active = False
-
                     session.add(listing)
                     results["new"] += 1
                     # Track for notifications (will be sent after commit)
@@ -426,11 +419,7 @@ class ScraperService:
         listing.description = scraped.description or listing.description
         listing.image_url = scraped.image_url or listing.image_url
         listing.url = scraped.url or listing.url  # Update URL in case it changed
-        # Reactivate PM listings found again. For aggregator sources, don't
-        # reactivate inactive listings — they were seeded on first import as
-        # a baseline and should only serve as dedup anchors, not dashboard entries.
-        if listing.source_name not in self.AGGREGATOR_SOURCES or listing.is_active:
-            listing.is_active = True
+        listing.is_active = True
         listing.last_seen = datetime.utcnow()
 
         # Update specs if newly found
